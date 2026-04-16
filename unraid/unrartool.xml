@@ -1,0 +1,148 @@
+<?xml version="1.0"?>
+<Container version="2">
+
+  <!-- ── Identity ─────────────────────────────────────────────────────── -->
+  <Name>unrartool</Name>
+  <Repository>hythamjurdi/unrartool:latest</Repository>
+  <Registry>https://hub.docker.com/r/hythamjurdi/unrartool</Registry>
+  <GitHub>https://github.com/hythamjurdi/unrartool</GitHub>
+  <Project>https://github.com/hythamjurdi/unrartool</Project>
+  <Overview>
+    A sleek self-hosted RAR extraction tool built for Unraid. Automatically detects and extracts split RAR archives (RAR5, multi-part .partNN.rar and legacy .r00/.r01 formats) downloaded by Sonarr, Radarr, or any other tool.
+
+    Features:
+    - File browser — navigate your media folders and queue RARs manually with one click
+    - Job queue — real-time progress bars and ETA for every extraction
+    - Watch folders — filesystem events trigger extraction the moment a download finishes
+    - Scheduler — periodic background scan of all watch folders
+    - Exclusion system — auto-excludes completed archives so they are never re-extracted; manual Mark as Done button available in the file browser
+    - Force Re-extract — override any exclusion when you need to re-run
+    - Password support — per-folder RAR passwords for encrypted archives
+    - Dark / Light theme toggle
+    - Full log viewer
+  </Overview>
+  <Category>Downloaders: MediaApp:Other Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/hythamjurdi/unrartool/main/unraid/unrartool.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/hythamjurdi/unrartool/main/unraid/icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <Description>Automated split-RAR extractor with a modern web UI. Built for Sonarr/Radarr workflows on Unraid.</Description>
+  <Networking>
+    <Mode>bridge</Mode>
+  </Networking>
+  <Date>2025-01-01</Date>
+  <Changes>
+    ### 1.0.0
+    - Initial release
+    - File browser with manual queue
+    - Watch folders with filesystem events
+    - Automatic exclusion after extraction
+    - Dark/Light theme
+    - Full log viewer
+    - Password-protected RAR support
+  </Changes>
+
+  <!-- ── Ports ─────────────────────────────────────────────────────────── -->
+  <Config
+    Name="Web UI Port"
+    Target="8080"
+    Default="8080"
+    Mode="tcp"
+    Description="Port for the RARUnpacker web interface. Change the left number to remap to a different host port."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8080</Config>
+
+  <!-- ── Volumes ───────────────────────────────────────────────────────── -->
+  <Config
+    Name="Config &amp; Database"
+    Target="/config"
+    Default="/mnt/user/appdata/unrartool"
+    Mode="rw"
+    Description="Stores the SQLite database, settings, and trash folder. Must be persistent across container restarts."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/unrartool</Config>
+
+  <Config
+    Name="Downloads / Media Root"
+    Target="/data"
+    Default="/mnt/user/downloads"
+    Mode="rw"
+    Description="Root path that appears in the file browser. Mount your downloads or media folder here. You can add more paths below by clicking Add another Path."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/downloads</Config>
+
+  <!-- Optional second mount — user can uncomment / configure in Unraid UI -->
+  <Config
+    Name="Media Library (optional)"
+    Target="/data/media"
+    Default="/mnt/user/media"
+    Mode="rw"
+    Description="Optional: mount a second location (e.g. your finished media library) so you can browse and manage it from the same UI."
+    Type="Path"
+    Display="advanced"
+    Required="false"
+    Mask="false">/mnt/user/media</Config>
+
+  <!-- ── Environment variables ─────────────────────────────────────────── -->
+  <Config
+    Name="Data Path"
+    Target="DATA_PATH"
+    Default="/data"
+    Mode=""
+    Description="The root path shown in the file browser on first load. Should match the container-side mount point of your downloads folder."
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false">/data</Config>
+
+  <Config
+    Name="Config Path"
+    Target="CONFIG_PATH"
+    Default="/config"
+    Mode=""
+    Description="Where the SQLite database and app settings are stored. Must match the Config volume above."
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false">/config</Config>
+
+  <Config
+    Name="Web UI Port (env)"
+    Target="PORT"
+    Default="8080"
+    Mode=""
+    Description="Internal port the web server listens on. Must match the Port mapping above."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">8080</Config>
+
+  <Config
+    Name="PUID"
+    Target="PUID"
+    Default="99"
+    Mode=""
+    Description="User ID the container runs as. Set to your Unraid user ID (usually 99 for nobody) to ensure extracted files are owned correctly."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">99</Config>
+
+  <Config
+    Name="PGID"
+    Target="PGID"
+    Default="100"
+    Mode=""
+    Description="Group ID the container runs as. Set to your Unraid group ID (usually 100 for users)."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">100</Config>
+
+</Container>
