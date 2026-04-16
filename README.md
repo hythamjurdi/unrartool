@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # unrartool
 Docker container to be able to manually and automatically unrar files with a dedicated web-ui.
 =======
@@ -210,4 +209,3 @@ rarunpacker/
 - The SQLite database is stored at `$CONFIG_PATH/rarunpacker.db`. Back up this file to preserve your job history and settings.
 - Extracting is always done **in-place** — files are written to the same directory as the RAR set.
 - The container uses a single uvicorn worker. This is intentional — SQLite + asyncio works best single-process.
->>>>>>> a788bdf (Initial commit)
