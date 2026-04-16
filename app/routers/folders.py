@@ -107,7 +107,7 @@ async def scan_folder(folder_id: int, db: Session = Depends(get_db)):
     ids = await queue_manager.enqueue_folder(wf.path, wf.post_action, wf.password, "manual")
     wf.last_scanned = datetime.utcnow()
     db.commit()
-    return {"ok": True, "queued": len(ids), "job_ids": ids}
+    return {"ok": True, "queued": len(ids["queued"]), "skipped": len(ids["skipped"]), "job_ids": ids["queued"]}
 
 
 @router.post("/{folder_id}/mark-extracted")

@@ -1,6 +1,3 @@
-# unrartool
-Docker container to be able to manually and automatically unrar files with a dedicated web-ui.
-=======
 # RARUnpacker
 
 A self-hosted Docker container for automatically extracting split RAR archives — built for Unraid but works anywhere. Features a sleek web UI with a file browser, job queue, watch folders, scheduled scanning, real-time progress, and full log visibility.

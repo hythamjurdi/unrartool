@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import init_db
-from .routers import files, folders, jobs, logs, settings
+from .routers import exclusions, files, folders, jobs, logs, settings
 from .services.scheduler import scan_scheduler
 from .services.watcher import folder_watcher
 from .ws_manager import ws_manager
@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="RARUnpacker", version="1.0.0", lifespan=lifespan)
 
 # Routers
+app.include_router(exclusions.router)
 app.include_router(files.router)
 app.include_router(jobs.router)
 app.include_router(folders.router)

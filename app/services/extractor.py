@@ -1,7 +1,13 @@
 """
-extractor.py – RAR discovery, integrity check, and extraction.
-Progress is estimated by monitoring the size of extracted files vs the
-archive's declared uncompressed size (avoids fragile stdout parsing).
+extractor.py – RAR discovery, integrity check, and real-time extraction.
+
+Progress is driven by parsing unrar's own stdout output.
+unrar prints lines like:
+    Extracting  Movie.S01E01.mkv                                        3%
+using \\r (carriage return) to overwrite the same terminal line.
+We split the raw byte stream on both \\r and \\n, then regex-match the
+trailing percentage on each segment — giving us smooth, real-time updates
+directly from the tool itself rather than guessing from folder sizes.
 """
 
 import asyncio
@@ -18,13 +24,11 @@ from typing import AsyncIterator
 # ---------------------------------------------------------------------------
 
 def is_first_rar_part(path: Path) -> bool:
-    """Return True only for the first part of a RAR set (or a standalone RAR)."""
+    """Return True only for the first part of a RAR set (or standalone RAR)."""
     name = path.name.lower()
-    # New-style multipart: .partN.rar  — keep only part 1
     m = re.match(r'^.+\.part(\d+)\.rar$', name)
     if m:
         return int(m.group(1)) == 1
-    # Old-style .rar / .r00 / .r01 …  — .rar is always the first part
     return name.endswith('.rar')
 
 
@@ -35,14 +39,11 @@ def find_rar_sets(folder_path: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Pre-flight check
+# Pre-flight
 # ---------------------------------------------------------------------------
 
 async def check_parts_complete(rar_path: str) -> tuple[bool, str]:
-    """
-    Run `unrar l` to verify all volumes are present.
-    Returns (ok, error_message).
-    """
+    """Run `unrar l` to verify all volumes are present. Returns (ok, error)."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "unrar", "l", rar_path,
@@ -68,10 +69,7 @@ async def check_parts_complete(rar_path: str) -> tuple[bool, str]:
 
 
 async def get_declared_size(rar_path: str) -> int:
-    """
-    Ask unrar for the total unpacked size of the archive.
-    Returns bytes, or 0 on failure.
-    """
+    """Return total unpacked size in bytes from `unrar l`, or 0 on failure."""
     try:
         proc = await asyncio.create_subprocess_exec(
             "unrar", "l", rar_path,
@@ -80,52 +78,82 @@ async def get_declared_size(rar_path: str) -> int:
         )
         out, _ = await proc.communicate()
         output = out.decode("utf-8", errors="replace")
-
-        # Summary line looks like: "     3  1,234,567,890    ...  3 files"
-        # Grab all bare numbers followed by whitespace and pick the biggest one.
-        candidates = [
-            int(s.replace(",", ""))
-            for s in re.findall(r"[\d,]{4,}", output)
-        ]
+        candidates = [int(s.replace(",", "")) for s in re.findall(r"[\d,]{4,}", output)]
         return max(candidates) if candidates else 0
     except Exception:
         return 0
 
 
 # ---------------------------------------------------------------------------
-# Size helper (used for progress)
+# Real-time stdout reader
 # ---------------------------------------------------------------------------
 
-def folder_size(path: str) -> int:
-    total = 0
-    try:
-        for entry in os.scandir(path):
-            try:
-                if entry.is_file(follow_symlinks=False):
-                    total += entry.stat().st_size
-                elif entry.is_dir(follow_symlinks=False):
-                    total += folder_size(entry.path)
-            except OSError:
-                pass
-    except OSError:
-        pass
-    return total
+# Matches a percentage at the end of a unrar progress line, e.g.:
+#   "Extracting  Movie.mkv                                              37%"
+_PCT_RE = re.compile(r'\b(\d{1,3})%')
+
+
+async def _read_progress(
+    stream: asyncio.StreamReader,
+    queue: asyncio.Queue,
+    stderr_buf: list[bytes],
+    is_stderr: bool = False,
+) -> None:
+    """
+    Read raw bytes from stdout (or stderr), split on both \\r and \\n,
+    parse percentage values, and push them onto queue.
+    Also buffers everything for post-mortem error reporting.
+    """
+    buf = b""
+    while True:
+        chunk = await stream.read(512)
+        if not chunk:
+            break
+        stderr_buf.append(chunk)
+        if is_stderr:
+            continue                    # stderr: buffer only, don't parse %
+
+        buf += chunk
+        # Split on \r or \n — unrar uses \r to overwrite the progress line
+        segments = re.split(b'[\r\n]', buf)
+        # The last element may be incomplete — keep it in the buffer
+        buf = segments.pop()
+
+        for seg in segments:
+            text = seg.decode("utf-8", errors="replace")
+            m = _PCT_RE.search(text)
+            if m:
+                pct = int(m.group(1))
+                await queue.put(("progress", float(pct)))
+
+    # Flush any remaining buffer
+    if buf:
+        text = buf.decode("utf-8", errors="replace")
+        m = _PCT_RE.search(text)
+        if m:
+            await queue.put(("progress", float(int(m.group(1)))))
+
+    await queue.put(("eof", None))
 
 
 # ---------------------------------------------------------------------------
-# Extraction
+# Extraction generator
 # ---------------------------------------------------------------------------
 
 async def extract(
     rar_path: str,
     dest_path: str,
     password: str | None = None,
-    total_size: int = 0,
+    total_size: int = 0,             # kept for API compat, no longer used
 ) -> AsyncIterator[tuple[float, int | None, str]]:
     """
-    Async generator that yields (progress %, eta_seconds, status_line).
-    Yields progress=-1 on failure with status_line containing the error.
+    Async generator that yields (progress_pct, eta_seconds, status_line).
+    Yields progress=-1 on failure (status_line contains the error message).
     Yields progress=100 on success.
+
+    Progress comes directly from unrar's stdout percentage output, giving
+    smooth, accurate real-time updates for both single files and large
+    multi-part archives.
     """
     cmd = ["unrar", "x", "-y", "-o+"]
     cmd.append(f"-p{password}" if password else "-p-")
@@ -141,46 +169,74 @@ async def extract(
         yield -1.0, None, "unrar binary not found in PATH"
         return
 
-    start = time.monotonic()
-    stop_flag = asyncio.Event()
+    progress_queue: asyncio.Queue = asyncio.Queue()
+    stdout_buf: list[bytes] = []
+    stderr_buf: list[bytes] = []
 
-    async def _monitor() -> AsyncIterator[tuple[float, int | None]]:
-        """Polls extracted file size every second for progress."""
-        if total_size <= 0:
-            return
-        while not stop_flag.is_set():
-            current = await asyncio.to_thread(folder_size, dest_path)
-            pct = min(99.0, current / total_size * 100)
-            elapsed = time.monotonic() - start
-            eta = int(elapsed / pct * (100 - pct)) if pct > 0.5 else None
-            yield pct, eta
-            await asyncio.sleep(1)
+    # Two background tasks — one parses progress from stdout, one drains stderr
+    reader_tasks = [
+        asyncio.create_task(
+            _read_progress(proc.stdout, progress_queue, stdout_buf, is_stderr=False)
+        ),
+        asyncio.create_task(
+            _read_progress(proc.stderr, progress_queue, stderr_buf, is_stderr=True)
+        ),
+    ]
 
-    # Run extraction and monitor concurrently
-    monitor_task = asyncio.create_task(_run_monitor(_monitor(), stop_flag))
+    start        = time.monotonic()
+    last_pct     = 0.0
+    eof_count    = 0                # we expect 2 EOFs (stdout + stderr)
+    done         = False
 
-    try:
-        stdout_data, stderr_data = await proc.communicate()
-    finally:
-        stop_flag.set()
-        monitor_task.cancel()
+    while not done:
         try:
-            await monitor_task
-        except asyncio.CancelledError:
-            pass
+            kind, value = await asyncio.wait_for(
+                progress_queue.get(), timeout=0.25
+            )
+        except asyncio.TimeoutError:
+            # No new data yet — re-yield the last known percentage so the UI
+            # keeps the bar alive (important for large files with sparse output)
+            elapsed = time.monotonic() - start
+            eta = None
+            if last_pct > 0.5:
+                eta = int(elapsed / last_pct * (100.0 - last_pct))
+            yield last_pct, eta, "extracting"
+            continue
+
+        if kind == "eof":
+            eof_count += 1
+            if eof_count >= 2:
+                done = True
+            continue
+
+        if kind == "progress":
+            pct = value
+            # Only move forward — never let the bar go backwards
+            if pct > last_pct:
+                last_pct = pct
+            elapsed = time.monotonic() - start
+            eta = None
+            if last_pct > 0.5:
+                eta = int(elapsed / last_pct * (100.0 - last_pct))
+            yield last_pct, eta, "extracting"
+
+    # Wait for reader tasks to clean up
+    await asyncio.gather(*reader_tasks, return_exceptions=True)
+
+    # Wait for the process itself
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=10.0)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
 
     if proc.returncode == 0:
         yield 100.0, 0, "Extraction complete"
     else:
-        err = (stderr_data or stdout_data).decode("utf-8", errors="replace").strip()
-        yield -1.0, None, err[:500] or f"unrar exited with code {proc.returncode}"
-
-
-async def _run_monitor(gen, stop_flag):
-    """Drain the monitor async generator (it yields internally but we don't
-    need the values here — callers will query DB/WS via the queue manager)."""
-    async for _ in gen:
-        pass
+        stderr_text = b"".join(stderr_buf).decode("utf-8", errors="replace").strip()
+        stdout_text = b"".join(stdout_buf).decode("utf-8", errors="replace").strip()
+        err = stderr_text or stdout_text or f"unrar exited with code {proc.returncode}"
+        yield -1.0, None, err[:500]
 
 
 # ---------------------------------------------------------------------------
@@ -188,27 +244,24 @@ async def _run_monitor(gen, stop_flag):
 # ---------------------------------------------------------------------------
 
 def rar_part_paths(first_part: str) -> list[str]:
-    """Return all file paths that belong to this RAR set."""
+    """Return every file path that belongs to this RAR set."""
     p = Path(first_part)
     name = p.name.lower()
     parent = p.parent
-    parts = []
 
     if re.match(r'^.+\.part\d+\.rar$', name):
         stem = re.sub(r'\.part\d+\.rar$', '', name)
-        parts = [str(f) for f in parent.iterdir()
-                 if re.match(rf'^{re.escape(stem)}\.part\d+\.rar$', f.name.lower())]
+        return [str(f) for f in parent.iterdir()
+                if re.match(rf'^{re.escape(stem)}\.part\d+\.rar$', f.name.lower())]
     else:
         stem = p.stem
         parts = [str(p)]
-        # old-style .r00 .r01 …
         parts += [str(f) for f in parent.iterdir()
                   if re.match(rf'^{re.escape(stem)}\.r\d+$', f.name.lower())]
+        return parts
 
-    return parts
 
-
-def delete_rar_parts(first_part: str):
+def delete_rar_parts(first_part: str) -> None:
     for path in rar_part_paths(first_part):
         try:
             os.remove(path)
@@ -216,7 +269,7 @@ def delete_rar_parts(first_part: str):
             pass
 
 
-def trash_rar_parts(first_part: str, trash_folder: str):
+def trash_rar_parts(first_part: str, trash_folder: str) -> None:
     Path(trash_folder).mkdir(parents=True, exist_ok=True)
     for path in rar_part_paths(first_part):
         try:

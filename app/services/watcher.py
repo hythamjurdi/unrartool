@@ -54,10 +54,22 @@ class _Handler(FileSystemEventHandler):
 
     @staticmethod
     async def _enqueue(rar_path: str):
+        from ..models import Exclusion
         db = new_session()
         try:
             folder = str(Path(rar_path).parent)
-            # Find the matching watch folder config (could be a parent)
+
+            # Check exclusion table first — avoids hitting the queue at all
+            paths_to_check = [rar_path, folder]
+            p = Path(rar_path).parent
+            while p != p.parent:
+                paths_to_check.append(str(p))
+                p = p.parent
+            if db.query(Exclusion).filter(Exclusion.path.in_(paths_to_check)).first():
+                print(f"[INFO] Watcher skipped excluded path: {rar_path}")
+                return
+
+            # Find matching watch folder config
             wf = (
                 db.query(WatchedFolder)
                 .filter(WatchedFolder.enabled == True, WatchedFolder.marked_extracted == False)  # noqa: E712
@@ -73,6 +85,7 @@ class _Handler(FileSystemEventHandler):
                     pass
             if matched is None:
                 return
+
             await queue_manager.enqueue(
                 rar_file=rar_path,
                 post_action=matched.post_action,

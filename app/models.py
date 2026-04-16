@@ -47,6 +47,20 @@ class LogEntry(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 
+class Exclusion(Base):
+    """
+    Tracks paths (folders or specific RAR files) that should never be
+    auto-queued — either set manually by the user or automatically after
+    a successful extraction.
+    """
+    __tablename__ = "exclusions"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    path       = Column(String, unique=True, nullable=False)  # folder OR rar_file path
+    reason     = Column(String, default="manual")             # manual | auto_extracted
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

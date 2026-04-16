@@ -17,9 +17,10 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 # ---------------------------------------------------------------------------
 
 class EnqueueRequest(BaseModel):
-    path: str                           # folder OR specific rar file
-    post_action: Optional[str] = None  # keep | delete | trash
+    path: str
+    post_action: Optional[str] = None
     password: Optional[str] = None
+    force: bool = False              # bypass exclusion check
 
 
 class JobOut(BaseModel):
@@ -83,11 +84,11 @@ async def enqueue(req: EnqueueRequest):
     if p.is_file():
         if not is_first_rar_part(p):
             raise HTTPException(400, "File is not a first-part RAR")
-        jid = await queue_manager.enqueue(str(p), req.post_action, req.password, "manual")
+        jid = await queue_manager.enqueue(str(p), req.post_action, req.password, "manual", force=req.force)
         return [jid] if jid else []
     else:
-        ids = await queue_manager.enqueue_folder(str(p), req.post_action, req.password, "manual")
-        return ids
+        result = await queue_manager.enqueue_folder(str(p), req.post_action, req.password, "manual", force=req.force)
+        return result["queued"]
 
 
 @router.get("/{job_id}", response_model=JobOut)
@@ -107,8 +108,8 @@ async def cancel_job(job_id: int):
 
 
 @router.post("/{job_id}/retry")
-async def retry_job(job_id: int):
-    ok = await queue_manager.retry(job_id)
+async def retry_job(job_id: int, force: bool = False):
+    ok = await queue_manager.retry(job_id, force=force)
     if not ok:
         raise HTTPException(400, "Job cannot be retried (wrong state)")
     return {"ok": True}
