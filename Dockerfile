@@ -19,6 +19,24 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ─── Stage 2: final image ──────────────────────────────────────────────────
 FROM base AS final
 
+# Build-time args — GitHub Actions injects these automatically via
+# docker/metadata-action. Unraid reads the resulting OCI labels to display
+# version info and to know whether a newer image is available.
+ARG BUILD_DATE
+ARG VERSION
+ARG VCS_REF
+
+LABEL org.opencontainers.image.title="UnrarTool" \
+      org.opencontainers.image.description="Automated split-RAR extractor with a modern web UI for Unraid" \
+      org.opencontainers.image.url="https://github.com/hythamjurdi/unrartool" \
+      org.opencontainers.image.source="https://github.com/hythamjurdi/unrartool" \
+      org.opencontainers.image.documentation="https://github.com/hythamjurdi/unrartool/blob/main/README.md" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.authors="hythamjurdi"
+
 COPY app/ ./app/
 
 # Default paths (override via environment in docker-compose / Unraid template)
