@@ -101,17 +101,47 @@ input,select,textarea{font-family:inherit;font-size:inherit}
 .breadcrumb{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text2);margin-bottom:16px;flex-wrap:wrap}
 .bc-item{cursor:pointer;color:var(--accent);padding:2px 4px;border-radius:4px}.bc-item:hover{background:var(--accent-dim)}
 .bc-sep{color:var(--text3)}.bc-cur{color:var(--text)}
+
+/* filter / sort toolbar */
+.browser-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.browser-search{flex:1;min-width:160px;padding:7px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);outline:none;transition:border-color var(--t);font-size:13px}
+.browser-search:focus{border-color:var(--accent)}
+.filter-group{display:flex;gap:4px;flex-wrap:wrap}
+.filter-btn{padding:5px 10px;border-radius:var(--radius-sm);font-size:12.5px;font-weight:500;border:1px solid var(--border);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all var(--t)}
+.filter-btn:hover{background:var(--surface3);color:var(--text)}
+.filter-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.sort-select{padding:6px 28px 6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:12.5px;outline:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;appearance:none}
+
+/* file list */
 .file-list{display:flex;flex-direction:column;gap:4px}
-.file-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);cursor:pointer;transition:all var(--t);position:relative}
+.file-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--surface);border:1px solid var(--border);transition:all var(--t);position:relative}
+.file-item.is-dir{cursor:pointer}
 .file-item:hover{border-color:var(--border2);background:var(--surface2)}
 .file-item.excluded-row{opacity:.6;border-style:dashed}
+.file-item.selected{border-color:var(--accent);background:var(--accent-dim)}
+
+/* checkbox */
+.fi-check{flex-shrink:0;width:18px;height:18px;accent-color:var(--accent);cursor:pointer}
+
 .fi-icon{width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .fi-icon.dir{background:var(--accent-dim)}.fi-icon.rar{background:var(--warn-dim)}.fi-icon.file{background:var(--surface3)}
 .fi-icon svg{width:16px;height:16px;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .fi-icon.dir svg{stroke:var(--accent)}.fi-icon.rar svg{stroke:var(--warn)}.fi-icon.file svg{stroke:var(--text3)}
 .fi-name{flex:1;font-size:13.5px;font-weight:500;word-break:break-all;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.fi-meta{font-size:12px;color:var(--text3);flex-shrink:0;text-align:right}
+.fi-meta{font-size:12px;color:var(--text3);flex-shrink:0;text-align:right;min-width:70px}
 .fi-acts{display:flex;gap:4px;flex-shrink:0}
+
+/* floating multi-select action bar */
+.select-bar{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius);
+  padding:12px 20px;box-shadow:var(--shadow);
+  display:flex;align-items:center;gap:12px;
+  z-index:500;min-width:360px;
+  animation:sIn .2s ease;
+}
+.select-bar-count{font-size:14px;font-weight:600;color:var(--accent);flex:1}
+.select-bar-actions{display:flex;gap:8px}
 
 /* table */
 .tbl-wrap{overflow-x:auto}
@@ -254,10 +284,50 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
     <div class="page" id="page-browser">
       <div class="alert alert-info" style="margin-bottom:14px">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Browse to any folder containing RAR files and click <strong>Extract</strong> to queue it manually. Folders with a <span class="badge b-completed" style="font-size:11px">✓ Done</span> badge are already excluded from automation.
+        Browse folders, check the boxes to select multiple, then use <strong>Queue Selected</strong>. Folders with <span class="badge b-completed" style="font-size:11px">✓ Done</span> are excluded from automation.
       </div>
+
+      <!-- Filter / Sort toolbar -->
+      <div class="browser-toolbar">
+        <input class="browser-search" id="browser-search" type="text" placeholder="Filter by name…" oninput="applyBrowserFilters()">
+        <div class="filter-group">
+          <button class="filter-btn active" id="fb-all"    onclick="setBrowserFilter('all')">All</button>
+          <button class="filter-btn"        id="fb-dirs"   onclick="setBrowserFilter('dirs')">Folders</button>
+          <button class="filter-btn"        id="fb-rar"    onclick="setBrowserFilter('rar')">RAR Only</button>
+          <button class="filter-btn"        id="fb-files"  onclick="setBrowserFilter('files')">Files</button>
+          <button class="filter-btn"        id="fb-undone" onclick="setBrowserFilter('undone')">Not Done</button>
+        </div>
+        <select class="sort-select" id="browser-sort" onchange="applyBrowserFilters()">
+          <option value="name-asc">Name A→Z</option>
+          <option value="name-desc">Name Z→A</option>
+          <option value="modified-desc">Newest First</option>
+          <option value="modified-asc">Oldest First</option>
+          <option value="size-desc">Size Large→Small</option>
+          <option value="size-asc">Size Small→Large</option>
+          <option value="rar-desc">Most RAR Sets</option>
+          <option value="type">Type (Folders First)</option>
+        </select>
+      </div>
+
+      <!-- Select-all row -->
+      <div id="browser-select-bar" style="display:flex;align-items:center;gap:10px;padding:6px 12px;margin-bottom:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm)">
+        <input type="checkbox" class="fi-check" id="select-all-cb" onchange="toggleSelectAll(this.checked)" title="Select all visible folders">
+        <span style="font-size:13px;color:var(--text2)">Select all folders</span>
+        <span id="select-count" style="font-size:12px;color:var(--text3);margin-left:4px"></span>
+      </div>
+
       <div class="breadcrumb" id="breadcrumb"></div>
       <div id="file-list-wrap"><div class="empty"><div class="empty-title">Loading…</div></div></div>
+    </div>
+
+    <!-- Floating multi-select action bar (shown when folders are selected) -->
+    <div class="select-bar" id="floating-select-bar" style="display:none">
+      <span class="select-bar-count" id="floating-count">0 folders selected</span>
+      <div class="select-bar-actions">
+        <button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
+        <button class="btn btn-ok btn-sm" onclick="markSelectedDone()">✓ Mark Done</button>
+        <button class="btn btn-primary btn-sm" onclick="queueSelected()">⬇ Queue Selected</button>
+      </div>
     </div>
 
     <!-- QUEUE -->
@@ -465,112 +535,276 @@ function renderDash() {
 }
 
 // ─── FILE BROWSER ─────────────────────────────────────────────────────────
+// Raw items cache so we can re-filter/sort without re-fetching
+S.browserItems  = [];
+S.browserFilter = 'all';
+S.browserSort   = 'type';
+S.selectedPaths = new Set();
+
 async function loadBrowser(path=null) {
-  if (!path) { path = await getRoot() }
+  if (!path) path = '/data';
   S.browserPath = path;
+  S.selectedPaths.clear();
   renderBreadcrumb(path);
+  updateFloatingBar();
   el('file-list-wrap').innerHTML = '<div class="empty"><div class="empty-title">Loading…</div></div>';
-  const items = await api(`/api/files/browse?path=${encodeURIComponent(path)}`);
-  const excls = await api('/api/exclusions');
-  S.exclusions = excls;
-  renderFileList(items, excls);
+  const [items, excls] = await Promise.all([
+    api(`/api/files/browse?path=${encodeURIComponent(path)}`),
+    api('/api/exclusions'),
+  ]);
+  S.browserItems = items || [];
+  S.exclusions   = excls  || [];
+  applyBrowserFilters();
 }
-async function getRoot() { try{ return '/data' }catch{ return '/' } }
+
+function setBrowserFilter(f) {
+  S.browserFilter = f;
+  ['all','dirs','rar','files','undone'].forEach(k => {
+    el(`fb-${k}`)?.classList.toggle('active', k === f);
+  });
+  S.selectedPaths.clear();
+  applyBrowserFilters();
+}
+
+function applyBrowserFilters() {
+  const query  = (el('browser-search')?.value || '').toLowerCase();
+  const sort   = el('browser-sort')?.value || 'type';
+  S.browserSort = sort;
+  const exclSet = new Set(S.exclusions.map(e => e.path));
+
+  let items = [...S.browserItems];
+
+  // ── Text filter ───────────────────────────────────────────────────────
+  if (query) items = items.filter(i => i.name.toLowerCase().includes(query));
+
+  // ── Type filter ───────────────────────────────────────────────────────
+  if (S.browserFilter === 'dirs')   items = items.filter(i => i.is_dir);
+  if (S.browserFilter === 'files')  items = items.filter(i => !i.is_dir);
+  if (S.browserFilter === 'rar')    items = items.filter(i => i.is_dir && i.rar_count > 0);
+  if (S.browserFilter === 'undone') items = items.filter(i => i.is_dir && !exclSet.has(i.path));
+
+  // ── Sort ──────────────────────────────────────────────────────────────
+  items.sort((a, b) => {
+    switch (sort) {
+      case 'name-asc':      return a.name.localeCompare(b.name);
+      case 'name-desc':     return b.name.localeCompare(a.name);
+      case 'modified-desc': return b.modified - a.modified;
+      case 'modified-asc':  return a.modified - b.modified;
+      case 'size-desc':     return b.size - a.size;
+      case 'size-asc':      return a.size - b.size;
+      case 'rar-desc':      return (b.rar_count||0) - (a.rar_count||0);
+      case 'type':
+      default:
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+    }
+  });
+
+  renderFileList(items, exclSet);
+}
+
 function renderBreadcrumb(path) {
   const parts = path.split('/').filter(Boolean);
   let built = '';
-  const segs = parts.map((p,i) => {
-    built += '/'+p;
+  const segs = parts.map((p, i) => {
+    built += '/' + p;
     const fp = built;
-    return i===parts.length-1
+    return i === parts.length - 1
       ? `<span class="bc-cur">${p}</span>`
       : `<span class="bc-item" onclick="loadBrowser('${esc(fp)}')">${p}</span><span class="bc-sep">/</span>`;
   });
   el('breadcrumb').innerHTML = `<span class="bc-item" onclick="loadBrowser('/')">Root</span><span class="bc-sep">/</span>${segs.join('')}`;
 }
-function renderFileList(items, excls) {
+
+function renderFileList(items, exclSet) {
   const wrap = el('file-list-wrap');
-  if (!items||!items.length) { wrap.innerHTML = emptyState('Empty folder','No files or folders found'); return }
-  const exclPaths = new Set(excls.map(e=>e.path));
-  wrap.innerHTML = `<div class="file-list">${items.map(item=>fileRow(item,exclPaths)).join('')}</div>`;
+  if (!items || !items.length) {
+    wrap.innerHTML = emptyState('No items match', 'Try changing the filter or search term');
+    return;
+  }
+  // Dirs that can be checked (have RARs or are folders)
+  const checkableDirs = items.filter(i => i.is_dir);
+  const allChecked = checkableDirs.length > 0 && checkableDirs.every(i => S.selectedPaths.has(i.path));
+  const someChecked = checkableDirs.some(i => S.selectedPaths.has(i.path));
+  const selAllCb = el('select-all-cb');
+  if (selAllCb) { selAllCb.checked = allChecked; selAllCb.indeterminate = !allChecked && someChecked; }
+
+  const cnt = el('select-count');
+  if (cnt) cnt.textContent = S.selectedPaths.size > 0 ? `${S.selectedPaths.size} selected` : '';
+
+  wrap.innerHTML = `<div class="file-list">${items.map(item => fileRow(item, exclSet)).join('')}</div>`;
 }
+
 function fileRow(item, exclPaths) {
-  const isDir = item.is_dir;
+  const isDir      = item.is_dir;
   const isExcluded = exclPaths.has(item.path);
-  const iconCls = isDir ? (item.rar_count>0?'rar':'dir') : 'file';
+  const isSelected = S.selectedPaths.has(item.path);
+  const iconCls    = isDir ? (item.rar_count > 0 ? 'rar' : 'dir') : 'file';
   const icon = isDir
     ? `<svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`
     : `<svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
 
   const badges = [];
-  if (isDir && item.rar_count>0) badges.push(bdg(item.rar_status));
-  if (isExcluded) badges.push(`<span class="badge b-completed" title="Auto-excluded or marked as done">✓ Done</span>`);
+  if (isDir && item.rar_count > 0) badges.push(bdg(item.rar_status));
+  if (isExcluded) badges.push(`<span class="badge b-completed" title="Excluded from automation">✓ Done</span>`);
   if (item.marked_extracted) badges.push(`<span class="badge b-excluded">Marked Extracted</span>`);
 
-  // Action buttons — always visible, text-labelled so purpose is obvious
-  const acts = isDir ? `
-    <button class="btn btn-primary btn-sm" title="Queue this folder for extraction" onclick="event.stopPropagation();openEQ('${escStr(item.path)}',${isExcluded})">
-      Extract
-    </button>
-    ${isExcluded
-      ? `<button class="btn btn-warn btn-sm" title="Remove exclusion so this folder can be extracted again" onclick="event.stopPropagation();clearExcl('${escStr(item.path)}')">
-          ↺ Re-enable
-         </button>`
-      : `<button class="btn btn-ok btn-sm" title="Mark as done — automation will skip this folder permanently" onclick="event.stopPropagation();markDone('${escStr(item.path)}')">
-          ✓ Mark Done
-         </button>`}
-    <button class="btn btn-secondary btn-sm" title="Add to watch folders for automatic extraction" onclick="event.stopPropagation();quickWatch('${escStr(item.path)}')">
-      Watch
-    </button>` : '';
+  const checkbox = isDir
+    ? `<input type="checkbox" class="fi-check" ${isSelected ? 'checked' : ''}
+        onclick="event.stopPropagation();toggleSelect('${escStr(item.path)}',this.checked)">`
+    : `<div style="width:18px;flex-shrink:0"></div>`;
 
-  return `<div class="file-item${isExcluded?' excluded-row':''}" ${isDir?`onclick="loadBrowser('${escStr(item.path)}')"`:''}>
+  const acts = isDir ? `
+    <button class="btn btn-primary btn-sm" title="Queue for extraction"
+      onclick="event.stopPropagation();openEQ('${escStr(item.path)}',${isExcluded})">Extract</button>
+    ${isExcluded
+      ? `<button class="btn btn-warn btn-sm" title="Clear exclusion"
+           onclick="event.stopPropagation();clearExcl('${escStr(item.path)}')">↺ Re-enable</button>`
+      : `<button class="btn btn-ok btn-sm" title="Mark as done — skip in automation"
+           onclick="event.stopPropagation();markDone('${escStr(item.path)}')">✓ Mark Done</button>`}
+    <button class="btn btn-secondary btn-sm" title="Add to watch folders"
+      onclick="event.stopPropagation();quickWatch('${escStr(item.path)}')">Watch</button>` : '';
+
+  const clickHandler = isDir ? `onclick="loadBrowser('${escStr(item.path)}')"` : '';
+  const classes = ['file-item', isDir ? 'is-dir' : '', isExcluded ? 'excluded-row' : '', isSelected ? 'selected' : ''].filter(Boolean).join(' ');
+
+  return `<div class="${classes}" ${clickHandler}>
+    ${checkbox}
     <div class="fi-icon ${iconCls}">${icon}</div>
     <div class="fi-name">${esc(item.name)} ${badges.join(' ')}</div>
-    <div class="fi-meta">${isDir&&item.rar_count>0?item.rar_count+' set'+(item.rar_count>1?'s':''):fmtBytes(item.size)}</div>
+    <div class="fi-meta">${isDir && item.rar_count > 0 ? item.rar_count + ' set' + (item.rar_count > 1 ? 's' : '') : fmtBytes(item.size)}</div>
     <div class="fi-acts">${acts}</div>
   </div>`;
 }
+
+// ── Selection helpers ──────────────────────────────────────────────────────
+function toggleSelect(path, checked) {
+  checked ? S.selectedPaths.add(path) : S.selectedPaths.delete(path);
+  updateFloatingBar();
+  // Re-render just the select-all state and count without full re-render
+  const exclSet = new Set(S.exclusions.map(e => e.path));
+  const checkableDirs = S.browserItems.filter(i => i.is_dir);
+  const allChecked = checkableDirs.length > 0 && checkableDirs.every(i => S.selectedPaths.has(i.path));
+  const someChecked = checkableDirs.some(i => S.selectedPaths.has(i.path));
+  const selAllCb = el('select-all-cb');
+  if (selAllCb) { selAllCb.checked = allChecked; selAllCb.indeterminate = !allChecked && someChecked; }
+  // Update individual row highlight
+  const row = document.querySelector(`.file-item .fi-check[onclick*="${CSS.escape(path)}"]`)?.closest('.file-item');
+  if (row) row.classList.toggle('selected', checked);
+  const cnt = el('select-count');
+  if (cnt) cnt.textContent = S.selectedPaths.size > 0 ? `${S.selectedPaths.size} selected` : '';
+}
+
+function toggleSelectAll(checked) {
+  const exclSet = new Set(S.exclusions.map(e => e.path));
+  // Only select visible dirs (current filtered list)
+  const visibleItems = S.browserItems.filter(i => {
+    const q = (el('browser-search')?.value || '').toLowerCase();
+    if (q && !i.name.toLowerCase().includes(q)) return false;
+    if (!i.is_dir) return false;
+    if (S.browserFilter === 'rar')    return i.rar_count > 0;
+    if (S.browserFilter === 'undone') return !exclSet.has(i.path);
+    return true;
+  });
+  visibleItems.forEach(i => checked ? S.selectedPaths.add(i.path) : S.selectedPaths.delete(i.path));
+  updateFloatingBar();
+  applyBrowserFilters(); // re-render with updated selections
+}
+
+function clearSelection() {
+  S.selectedPaths.clear();
+  updateFloatingBar();
+  applyBrowserFilters();
+}
+
+function updateFloatingBar() {
+  const bar = el('floating-select-bar');
+  const cnt = el('floating-count');
+  const n = S.selectedPaths.size;
+  if (bar) bar.style.display = n > 0 ? '' : 'none';
+  if (cnt) cnt.textContent = `${n} folder${n !== 1 ? 's' : ''} selected`;
+}
+
+// ── Multi-select queue action ─────────────────────────────────────────────
+async function queueSelected() {
+  if (!S.selectedPaths.size) return;
+  const paths = [...S.selectedPaths];
+
+  // Use the enqueue modal but in batch mode
+  S.enqueueTarget    = null;
+  S.enqueueTargets   = paths;
+  S.enqueueIsExcluded = paths.some(p => S.exclusions.find(e => e.path === p));
+  el('eq-path-disp').textContent = `${paths.length} folder${paths.length > 1 ? 's' : ''} selected`;
+  el('eq-excl-warn').style.display = S.enqueueIsExcluded ? '' : 'none';
+  el('eq-pw').value = '';
+  const sw = el('eq-force-sw');
+  if (S.enqueueIsExcluded) sw.classList.add('on'); else sw.classList.remove('on');
+  openM('m-enqueue');
+}
+
+async function markSelectedDone() {
+  if (!S.selectedPaths.size) return;
+  const paths = [...S.selectedPaths];
+  await Promise.all(paths.map(p => api('/api/exclusions', 'POST', { path: p })));
+  toast(`Marked ${paths.length} folder${paths.length > 1 ? 's' : ''} as done`, 'ok');
+  clearSelection();
+  loadBrowser(S.browserPath);
+}
+
 function browserUp() {
   if (!S.browserPath) return;
   const parts = S.browserPath.split('/').filter(Boolean);
   parts.pop();
-  loadBrowser('/'+parts.join('/'));
+  loadBrowser('/' + parts.join('/'));
 }
+
 function openEQ(path, isExcluded) {
-  S.enqueueTarget = path;
+  S.enqueueTarget  = path;
+  S.enqueueTargets = null;
   S.enqueueIsExcluded = isExcluded;
   el('eq-path-disp').textContent = path;
   el('eq-excl-warn').style.display = isExcluded ? '' : 'none';
   el('eq-pw').value = '';
-  // pre-enable force if excluded
   const sw = el('eq-force-sw');
   if (isExcluded) sw.classList.add('on'); else sw.classList.remove('on');
   openM('m-enqueue');
 }
+
 async function submitEnqueue() {
-  const path = S.enqueueTarget;
-  const pw = el('eq-pw').value;
-  const act = el('eq-act').value;
+  const pw    = el('eq-pw').value;
+  const act   = el('eq-act').value;
   const force = el('eq-force-sw').classList.contains('on');
   closeM('m-enqueue');
-  const ids = await api('/api/jobs','POST',{path,password:pw||null,post_action:act,force});
-  if (ids&&ids.length) toast(`Queued ${ids.length} RAR set(s)`,'ok');
-  else toast('No new RARs queued (all excluded or already active). Use Force to override.','warn');
+
+  // Single path or multi-select
+  const paths = S.enqueueTargets || (S.enqueueTarget ? [S.enqueueTarget] : []);
+  if (!paths.length) return;
+
+  let total = 0;
+  for (const path of paths) {
+    const ids = await api('/api/jobs', 'POST', { path, password: pw || null, post_action: act, force });
+    total += ids?.length || 0;
+  }
+  if (total) toast(`Queued ${total} RAR set(s) from ${paths.length} folder(s)`, 'ok');
+  else toast('No new RARs queued — all excluded or already active. Use Force to override.', 'warn');
+
+  clearSelection();
   go('queue');
 }
+
 async function markDone(path) {
-  await api('/api/exclusions','POST',{path});
-  toast('Marked as done — automation will skip this path','ok');
+  await api('/api/exclusions', 'POST', { path });
+  toast('Marked as done — automation will skip this path', 'ok');
   loadBrowser(S.browserPath);
 }
 async function clearExcl(path) {
-  await api(`/api/exclusions/by-path?path=${encodeURIComponent(path)}`,'DELETE');
-  toast('Exclusion cleared — path will be processed again','ok');
+  await api(`/api/exclusions/by-path?path=${encodeURIComponent(path)}`, 'DELETE');
+  toast('Exclusion cleared — path will be processed again', 'ok');
   loadBrowser(S.browserPath);
 }
 async function quickWatch(path) {
-  await api('/api/folders','POST',{path,enabled:true});
-  toast('Added to watch folders','ok');
+  await api('/api/folders', 'POST', { path, enabled: true });
+  toast('Added to watch folders', 'ok');
   loadBrowser(S.browserPath);
 }
 
