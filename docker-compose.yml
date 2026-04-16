@@ -1,0 +1,38 @@
+services:
+  rarunpacker:
+    build: .
+    container_name: rarunpacker
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"       # Web UI — change left side to remap host port
+
+    volumes:
+      # ── Mount your media/downloads here ──────────────────────────────────
+      # Add as many volume mounts as you need. The file browser lets you
+      # navigate anything mounted into the container.
+      - /mnt/user/downloads:/data/downloads
+      - /mnt/user/media:/data/media
+
+      # ── Persistent config + SQLite DB ────────────────────────────────────
+      - /mnt/user/appdata/rarunpacker:/config
+
+    environment:
+      # Root path shown in the file browser on first load
+      DATA_PATH: /data
+
+      # Where the SQLite database and settings are stored
+      CONFIG_PATH: /config
+
+      # Web UI port (must match the container-side port above)
+      PORT: "8080"
+
+    # Unraid: set these to match your PUID/PGID if you need correct
+    # file ownership on extracted files
+    # user: "99:100"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

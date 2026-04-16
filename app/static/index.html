@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RARUnpacker</title>
+<style>
+/* ═══════════════════════════════════════
+   CSS VARIABLES — DARK / LIGHT THEMES
+═══════════════════════════════════════ */
+:root {
+  --sidebar-w: 220px;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  --transition: 0.18s ease;
+}
+[data-theme="dark"] {
+  --bg:         #0b0b14;
+  --surface:    #12121e;
+  --surface2:   #191928;
+  --surface3:   #20203a;
+  --border:     #272740;
+  --border2:    #32325a;
+  --accent:     #7c3aed;
+  --accent2:    #9d5ff5;
+  --accent-dim: rgba(124,58,237,.18);
+  --text:       #e6e6f4;
+  --text2:      #9898c0;
+  --text3:      #5a5a80;
+  --success:    #22c55e;
+  --success-dim:rgba(34,197,94,.15);
+  --error:      #ef4444;
+  --error-dim:  rgba(239,68,68,.15);
+  --warn:       #f59e0b;
+  --warn-dim:   rgba(245,158,11,.15);
+  --info:       #38bdf8;
+  --info-dim:   rgba(56,189,248,.15);
+  --shadow:     0 4px 24px rgba(0,0,0,.5);
+  --shadow-sm:  0 2px 8px rgba(0,0,0,.4);
+}
+[data-theme="light"] {
+  --bg:         #f0f0f8;
+  --surface:    #ffffff;
+  --surface2:   #f5f5fc;
+  --surface3:   #eaeaf5;
+  --border:     #dcdcee;
+  --border2:    #c8c8e4;
+  --accent:     #7c3aed;
+  --accent2:    #6d28d9;
+  --accent-dim: rgba(124,58,237,.12);
+  --text:       #1a1a30;
+  --text2:      #5050808;
+  --text2:      #60608a;
+  --text3:      #a0a0b8;
+  --success:    #16a34a;
+  --success-dim:rgba(22,163,74,.12);
+  --error:      #dc2626;
+  --error-dim:  rgba(220,38,38,.12);
+  --warn:       #d97706;
+  --warn-dim:   rgba(217,119,6,.12);
+  --info:       #0284c7;
+  --info-dim:   rgba(2,132,199,.12);
+  --shadow:     0 4px 20px rgba(0,0,0,.12);
+  --shadow-sm:  0 2px 6px rgba(0,0,0,.08);
+}
+
+/* ═══════════════ RESET ═══════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+button{cursor:pointer;font-family:inherit;font-size:inherit}
+a{color:var(--accent);text-decoration:none}
+input,select,textarea{font-family:inherit;font-size:inherit}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* ═══════════════ LAYOUT ═══════════════ */
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{
+  width:var(--sidebar-w);flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  padding:0;overflow:hidden;
+  transition:width var(--transition);
+}
+.sidebar-logo{
+  display:flex;align-items:center;gap:10px;
+  padding:20px 16px 16px;
+  border-bottom:1px solid var(--border);
+}
+.sidebar-logo svg{flex-shrink:0}
+.sidebar-logo-text{font-size:18px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.sidebar-logo-text span{color:var(--accent)}
+
+.nav{flex:1;padding:10px 0;overflow-y:auto}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 16px;margin:2px 8px;
+  border-radius:var(--radius-sm);
+  color:var(--text2);cursor:pointer;
+  transition:background var(--transition),color var(--transition);
+  user-select:none;
+}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--accent-dim);color:var(--accent)}
+.nav-item.active svg{stroke:var(--accent)}
+.nav-item svg{flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-label{font-size:13.5px;font-weight:500}
+.nav-badge{
+  margin-left:auto;min-width:18px;height:18px;
+  background:var(--accent);color:#fff;
+  border-radius:9px;font-size:11px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;padding:0 5px;
+}
+
+.sidebar-bottom{
+  padding:12px 8px;border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+}
+.theme-btn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:8px 10px;border-radius:var(--radius-sm);
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text2);transition:all var(--transition);
+}
+.theme-btn:hover{background:var(--surface3);color:var(--text)}
+.ws-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--error);flex-shrink:0;
+  transition:background .4s;
+}
+.ws-dot.connected{background:var(--success)}
+
+/* MAIN CONTENT */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{
+  display:flex;align-items:center;gap:12px;
+  padding:16px 24px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  flex-shrink:0;
+}
+.topbar-title{font-size:18px;font-weight:700;flex:1}
+.topbar-actions{display:flex;gap:8px}
+
+.content{flex:1;overflow-y:auto;padding:20px 24px}
+
+/* PAGES */
+.page{display:none}
+.page.active{display:block}
+
+/* ═══════════════ COMPONENTS ═══════════════ */
+
+/* Cards */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;
+  box-shadow:var(--shadow-sm);
+}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.card-title{font-size:14px;font-weight:600;color:var(--text2)}
+
+/* Stat cards */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;
+}
+.stat-label{font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.stat-value{font-size:26px;font-weight:700;color:var(--text)}
+.stat-value.accent{color:var(--accent)}
+.stat-value.success{color:var(--success)}
+.stat-value.error{color:var(--error)}
+.stat-value.warn{color:var(--warn)}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:8px 14px;border-radius:var(--radius-sm);
+  font-weight:500;border:none;transition:all var(--transition);
+  white-space:nowrap;
+}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{background:var(--surface3)}
+.btn-danger{background:var(--error-dim);color:var(--error);border:1px solid var(--error)}
+.btn-danger:hover{background:var(--error);color:#fff}
+.btn-success{background:var(--success-dim);color:var(--success);border:1px solid var(--success)}
+.btn-success:hover{background:var(--success);color:#fff}
+.btn-icon{padding:7px;width:32px;height:32px;justify-content:center}
+.btn-sm{padding:5px 10px;font-size:12.5px}
+.btn svg{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* Badges */
+.badge{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 8px;border-radius:20px;font-size:11.5px;font-weight:600;
+}
+.badge-pending{background:var(--surface3);color:var(--text2)}
+.badge-running{background:var(--info-dim);color:var(--info)}
+.badge-completed{background:var(--success-dim);color:var(--success)}
+.badge-failed{background:var(--error-dim);color:var(--error)}
+.badge-cancelled{background:var(--surface3);color:var(--text3)}
+.badge-skipped{background:var(--warn-dim);color:var(--warn)}
+.badge-has_rars{background:var(--accent-dim);color:var(--accent2)}
+.badge-in_progress{background:var(--info-dim);color:var(--info)}
+.badge-none{background:var(--surface3);color:var(--text3)}
+
+/* Progress bar */
+.progress-wrap{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden}
+.progress-bar{height:100%;border-radius:3px;background:var(--accent);transition:width .6s ease}
+.progress-bar.done{background:var(--success)}
+.progress-bar.fail{background:var(--error)}
+
+/* Job card */
+.job-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;
+}
+.job-card:hover{border-color:var(--border2)}
+.job-card-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.job-name{font-size:13.5px;font-weight:600;flex:1;word-break:break-all;line-height:1.4}
+.job-path{font-size:12px;color:var(--text2);margin-bottom:8px;word-break:break-all}
+.job-meta{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);flex-wrap:wrap}
+.job-actions{display:flex;gap:6px;margin-top:10px}
+.job-progress-label{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:4px}
+
+/* File browser */
+.breadcrumb{
+  display:flex;align-items:center;gap:4px;
+  font-size:13px;color:var(--text2);margin-bottom:16px;flex-wrap:wrap;
+}
+.breadcrumb-item{cursor:pointer;color:var(--accent);padding:2px 4px;border-radius:4px}
+.breadcrumb-item:hover{background:var(--accent-dim)}
+.breadcrumb-sep{color:var(--text3)}
+.breadcrumb-current{color:var(--text)}
+
+.file-list{display:flex;flex-direction:column;gap:4px}
+.file-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:var(--radius-sm);
+  background:var(--surface);border:1px solid var(--border);
+  cursor:pointer;transition:all var(--transition);
+}
+.file-item:hover{border-color:var(--border2);background:var(--surface2)}
+.file-item-icon{
+  width:32px;height:32px;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.file-item-icon.dir{background:var(--accent-dim)}
+.file-item-icon.rar{background:var(--warn-dim)}
+.file-item-icon.file{background:var(--surface3)}
+.file-item-icon svg{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;width:16px;height:16px}
+.file-item-icon.dir svg{stroke:var(--accent)}
+.file-item-icon.rar svg{stroke:var(--warn)}
+.file-item-name{flex:1;font-size:13.5px;font-weight:500;word-break:break-all}
+.file-item-meta{font-size:12px;color:var(--text3);flex-shrink:0;text-align:right}
+.file-item-actions{display:flex;gap:4px;flex-shrink:0;opacity:0;transition:opacity var(--transition)}
+.file-item:hover .file-item-actions{opacity:1}
+
+/* Table */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:10px 12px;text-align:left;color:var(--text2);font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+td.mono{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+
+/* Logs */
+.log-container{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);
+  font-family:var(--mono);font-size:12.5px;
+  max-height:65vh;overflow-y:auto;
+}
+.log-entry{
+  padding:6px 14px;border-bottom:1px solid var(--border);
+  display:flex;gap:12px;align-items:flex-start;
+}
+.log-entry:last-child{border-bottom:none}
+.log-time{color:var(--text3);flex-shrink:0;padding-top:1px}
+.log-level{flex-shrink:0;font-weight:700;width:54px;padding-top:1px}
+.log-level.INFO{color:var(--info)}
+.log-level.WARNING{color:var(--warn)}
+.log-level.ERROR{color:var(--error)}
+.log-msg{flex:1;word-break:break-all;color:var(--text)}
+
+/* Modal */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);
+  display:flex;align-items:center;justify-content:center;
+  z-index:1000;opacity:0;pointer-events:none;
+  transition:opacity var(--transition);
+}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:24px;
+  width:min(480px,92vw);box-shadow:var(--shadow);
+}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:16px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* Form */
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:12.5px;font-weight:600;color:var(--text2);margin-bottom:6px}
+.form-input{
+  width:100%;padding:9px 12px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-sm);color:var(--text);
+  outline:none;transition:border-color var(--transition);
+}
+.form-input:focus{border-color:var(--accent)}
+.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.form-hint{font-size:12px;color:var(--text3);margin-top:4px}
+
+/* Switch */
+.switch{display:flex;align-items:center;gap:10px;cursor:pointer}
+.switch-track{
+  width:36px;height:20px;border-radius:10px;
+  background:var(--surface3);border:1px solid var(--border2);
+  position:relative;transition:background var(--transition);flex-shrink:0;
+}
+.switch-track.on{background:var(--accent);border-color:var(--accent)}
+.switch-thumb{
+  position:absolute;top:2px;left:2px;
+  width:14px;height:14px;border-radius:50%;
+  background:#fff;transition:transform var(--transition);
+}
+.switch-track.on .switch-thumb{transform:translateX(16px)}
+
+/* Empty state */
+.empty{
+  text-align:center;padding:48px 20px;color:var(--text3);
+}
+.empty svg{stroke:var(--text3);opacity:.4;margin:0 auto 12px;display:block;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.empty-title{font-size:15px;font-weight:600;color:var(--text2);margin-bottom:6px}
+
+/* Tooltip */
+[title]{position:relative}
+
+/* Divider */
+.divider{height:1px;background:var(--border);margin:16px 0}
+
+/* Alert */
+.alert{
+  padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;margin-bottom:12px;
+  display:flex;align-items:flex-start;gap:8px;
+}
+.alert-info{background:var(--info-dim);color:var(--info)}
+.alert-error{background:var(--error-dim);color:var(--error)}
+.alert-success{background:var(--success-dim);color:var(--success)}
+
+/* Scrollbar for content */
+.content::-webkit-scrollbar{width:6px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+    <span class="sidebar-logo-text">RAR<span>Unpacker</span></span>
+  </div>
+
+  <div class="nav">
+    <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span class="nav-label">Dashboard</span>
+    </div>
+    <div class="nav-item" data-page="browser" onclick="navigate('browser')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+      <span class="nav-label">File Browser</span>
+    </div>
+    <div class="nav-item" data-page="queue" onclick="navigate('queue')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      <span class="nav-label">Queue</span>
+      <span class="nav-badge" id="queue-badge" style="display:none">0</span>
+    </div>
+    <div class="nav-item" data-page="watches" onclick="navigate('watches')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span class="nav-label">Watch Folders</span>
+    </div>
+    <div class="nav-item" data-page="history" onclick="navigate('history')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="nav-label">History</span>
+    </div>
+    <div class="nav-item" data-page="logs" onclick="navigate('logs')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <span class="nav-label">Logs</span>
+    </div>
+    <div class="nav-item" data-page="settings" onclick="navigate('settings')">
+      <svg width="18" height="18" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="nav-label">Settings</span>
+    </div>
+  </div>
+
+  <div class="sidebar-bottom">
+    <button class="theme-btn" onclick="toggleTheme()">
+      <svg id="theme-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <span id="theme-label">Light</span>
+    </button>
+    <div class="ws-dot" id="ws-dot" title="WebSocket disconnected"></div>
+  </div>
+</nav>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard</div>
+    <div class="topbar-actions" id="topbar-actions"></div>
+  </div>
+  <div class="content" id="content">
+
+    <!-- ════ DASHBOARD ════ -->
+    <div class="page active" id="page-dashboard">
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-value" id="stat-total">—</div></div>
+        <div class="stat-card"><div class="stat-label">Running</div><div class="stat-value accent" id="stat-running">—</div></div>
+        <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value success" id="stat-completed">—</div></div>
+        <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value error" id="stat-failed">—</div></div>
+        <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value warn" id="stat-pending">—</div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div class="card-title">ACTIVE JOBS</div>
+          <button class="btn btn-secondary btn-sm" onclick="navigate('queue')">View all</button>
+        </div>
+        <div id="active-jobs-list"><div class="empty"><div class="empty-title">No active jobs</div><p>Queue a folder to get started</p></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">RECENT ACTIVITY</div>
+          <button class="btn btn-secondary btn-sm" onclick="navigate('history')">View all</button>
+        </div>
+        <div id="recent-list"><div class="empty"><div class="empty-title">No recent jobs</div></div></div>
+      </div>
+    </div>
+
+    <!-- ════ FILE BROWSER ════ -->
+    <div class="page" id="page-browser">
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div id="file-list-wrap">
+        <div class="empty"><svg width="40" height="40" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><div class="empty-title">Loading…</div></div>
+      </div>
+    </div>
+
+    <!-- ════ QUEUE ════ -->
+    <div class="page" id="page-queue">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="filterQueue('all')" id="qf-all">All</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterQueue('pending')" id="qf-pending">Pending</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterQueue('running')" id="qf-running">Running</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-danger btn-sm" onclick="clearHistory()">Clear History</button>
+      </div>
+      <div id="queue-list"></div>
+    </div>
+
+    <!-- ════ WATCH FOLDERS ════ -->
+    <div class="page" id="page-watches">
+      <div id="watches-list"></div>
+    </div>
+
+    <!-- ════ HISTORY ════ -->
+    <div class="page" id="page-history">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="filterHistory('')">All</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterHistory('completed')">Completed</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterHistory('failed')">Failed</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterHistory('cancelled')">Cancelled</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-danger btn-sm" onclick="clearHistory()">Clear History</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Archive</th><th>Status</th><th>Progress</th><th>Source</th><th>Completed</th><th>Actions</th></tr></thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ LOGS ════ -->
+    <div class="page" id="page-logs">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="filterLogs('')">All</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterLogs('INFO')">Info</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterLogs('WARNING')">Warning</button>
+        <button class="btn btn-secondary btn-sm" onclick="filterLogs('ERROR')">Error</button>
+        <div style="flex:1"></div>
+        <label class="switch" title="Auto-scroll">
+          <div class="switch-track on" id="autoscroll-switch" onclick="toggleAutoscroll()"><div class="switch-thumb"></div></div>
+          <span style="font-size:13px;color:var(--text2)">Auto-scroll</span>
+        </label>
+        <button class="btn btn-danger btn-sm" onclick="clearLogs()">Clear</button>
+      </div>
+      <div class="log-container" id="log-container"></div>
+    </div>
+
+    <!-- ════ SETTINGS ════ -->
+    <div class="page" id="page-settings">
+      <div class="card" style="max-width:520px">
+        <div class="card-header"><div class="card-title">GENERAL SETTINGS</div></div>
+        <div class="form-group">
+          <label class="form-label">Scan Interval (minutes)</label>
+          <input type="number" class="form-input" id="s-interval" min="1" max="1440">
+          <div class="form-hint">How often the scheduler checks watch folders for new RARs.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max Concurrent Extractions</label>
+          <input type="number" class="form-input" id="s-concurrent" min="1" max="10">
+          <div class="form-hint">Number of RARs extracted simultaneously. 1 is recommended.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Default Post-Extraction Action</label>
+          <select class="form-input form-select" id="s-post-action">
+            <option value="keep">Keep RAR files</option>
+            <option value="delete">Delete RAR files</option>
+            <option value="trash">Move RARs to trash folder</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Trash Folder Path</label>
+          <input type="text" class="form-input" id="s-trash" placeholder="/config/trash">
+          <div class="form-hint">Used when post-action is set to "Move to trash".</div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ═══════════════════ MODALS ═══════════════════ -->
+
+<!-- Add watch folder modal -->
+<div class="modal-overlay" id="modal-add-watch">
+  <div class="modal">
+    <div class="modal-title">Add Watch Folder</div>
+    <div class="form-group">
+      <label class="form-label">Folder Path</label>
+      <input type="text" class="form-input" id="wf-path" placeholder="/data/downloads">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password (for encrypted RARs)</label>
+      <input type="text" class="form-input" id="wf-password" placeholder="Leave empty if not needed">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Post-Extraction Action</label>
+      <select class="form-input form-select" id="wf-post-action">
+        <option value="keep">Keep RAR files</option>
+        <option value="delete">Delete RAR files</option>
+        <option value="trash">Move to trash folder</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-add-watch')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddWatch()">Add Folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Enqueue folder modal (from file browser) -->
+<div class="modal-overlay" id="modal-enqueue">
+  <div class="modal">
+    <div class="modal-title">Queue for Extraction</div>
+    <div class="alert alert-info" id="enqueue-path-display" style="word-break:break-all"></div>
+    <div class="form-group">
+      <label class="form-label">Password (optional)</label>
+      <input type="text" class="form-input" id="enqueue-password" placeholder="Leave empty if not needed">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Post-Extraction Action</label>
+      <select class="form-input form-select" id="enqueue-post-action">
+        <option value="keep">Keep RAR files</option>
+        <option value="delete">Delete RAR files</option>
+        <option value="trash">Move to trash folder</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-enqueue')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEnqueue()">Add to Queue</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//   STATE
+// ═══════════════════════════════════════════
+const state = {
+  currentPage: 'dashboard',
+  browserPath: null,
+  queueFilter: 'all',
+  historyFilter: '',
+  logsFilter: '',
+  autoscroll: true,
+  jobs: {},         // id -> job
+  enqueueTarget: null,
+};
+
+// ═══════════════════════════════════════════
+//   WEBSOCKET
+// ═══════════════════════════════════════════
+let ws = null;
+let wsRetryTimer = null;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('connected');
+    document.getElementById('ws-dot').title = 'WebSocket connected';
+    if (wsRetryTimer) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-dot').title = 'WebSocket disconnected';
+    wsRetryTimer = setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleWSMessage(msg);
+    } catch {}
+  };
+}
+
+function handleWSMessage(msg) {
+  if (msg.type === 'new_job') {
+    state.jobs[msg.job.id] = msg.job;
+    refreshActiveViews();
+    updateBadge();
+  } else if (msg.type === 'job_update') {
+    const j = state.jobs[msg.job_id];
+    if (j) {
+      j.status = msg.status;
+      if (msg.progress !== undefined) j.progress = msg.progress;
+      if (msg.error) j.error_message = msg.error;
+    }
+    refreshActiveViews();
+    updateBadge();
+  } else if (msg.type === 'job_progress') {
+    const j = state.jobs[msg.job_id];
+    if (j) {
+      j.progress = msg.progress;
+      j.eta_seconds = msg.eta;
+    }
+    updateProgressUI(msg.job_id, msg.progress, msg.eta);
+  }
+}
+
+function updateProgressUI(jobId, progress, eta) {
+  const bar = document.getElementById(`bar-${jobId}`);
+  if (bar) bar.style.width = progress + '%';
+  const pct = document.getElementById(`pct-${jobId}`);
+  if (pct) pct.textContent = Math.round(progress) + '%';
+  const etaEl = document.getElementById(`eta-${jobId}`);
+  if (etaEl) etaEl.textContent = eta != null ? `ETA ${fmtDuration(eta)}` : '';
+}
+
+// ═══════════════════════════════════════════
+//   NAVIGATION
+// ═══════════════════════════════════════════
+const PAGE_TITLES = {
+  dashboard: 'Dashboard', browser: 'File Browser', queue: 'Queue',
+  watches: 'Watch Folders', history: 'History', logs: 'Logs', settings: 'Settings',
+};
+const PAGE_ACTIONS = {
+  browser: () => `<button class="btn btn-secondary btn-sm" onclick="browserUp()">↑ Up</button>`,
+  watches: () => `<button class="btn btn-primary btn-sm" onclick="openModal('modal-add-watch')">+ Add Folder</button>
+    <button class="btn btn-secondary btn-sm" onclick="scanAll()">Scan All Now</button>`,
+  logs: () => '',
+  settings: () => '',
+};
+
+function navigate(page) {
+  state.currentPage = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.page === page);
+  });
+  document.getElementById(`page-${page}`).classList.add('active');
+  document.getElementById('page-title').textContent = PAGE_TITLES[page];
+  const actions = PAGE_ACTIONS[page];
+  document.getElementById('topbar-actions').innerHTML = actions ? actions() : '';
+  loadPage(page);
+}
+
+function loadPage(page) {
+  if (page === 'dashboard') loadDashboard();
+  else if (page === 'browser') loadBrowser(state.browserPath);
+  else if (page === 'queue') loadQueue();
+  else if (page === 'watches') loadWatches();
+  else if (page === 'history') loadHistory();
+  else if (page === 'logs') loadLogs();
+  else if (page === 'settings') loadSettings();
+}
+
+function refreshActiveViews() {
+  const p = state.currentPage;
+  if (p === 'dashboard') refreshDashboard();
+  else if (p === 'queue') renderQueue(Object.values(state.jobs));
+  else if (p === 'history') renderHistoryRows(Object.values(state.jobs));
+}
+
+// ═══════════════════════════════════════════
+//   DASHBOARD
+// ═══════════════════════════════════════════
+async function loadDashboard() {
+  const jobs = await api('/api/jobs?limit=200');
+  jobs.forEach(j => state.jobs[j.id] = j);
+  refreshDashboard();
+}
+
+function refreshDashboard() {
+  const jobs = Object.values(state.jobs);
+  const counts = { pending:0, running:0, completed:0, failed:0 };
+  jobs.forEach(j => { if (counts[j.status] !== undefined) counts[j.status]++; });
+  setText('stat-total', jobs.length);
+  setText('stat-running', counts.running);
+  setText('stat-completed', counts.completed);
+  setText('stat-failed', counts.failed);
+  setText('stat-pending', counts.pending);
+
+  const active = jobs.filter(j => j.status === 'running' || j.status === 'pending');
+  const activeEl = document.getElementById('active-jobs-list');
+  if (active.length === 0) {
+    activeEl.innerHTML = emptyState('No active jobs', 'Add folders to the queue or watch list');
+  } else {
+    activeEl.innerHTML = active.slice(0,5).map(jobCard).join('');
+  }
+
+  const recent = jobs
+    .filter(j => j.status === 'completed' || j.status === 'failed')
+    .sort((a,b) => (b.completed_at||'').localeCompare(a.completed_at||''))
+    .slice(0,8);
+  const recentEl = document.getElementById('recent-list');
+  recentEl.innerHTML = recent.length ? `<div class="table-wrap"><table><thead><tr><th>Archive</th><th>Status</th><th>Completed</th></tr></thead><tbody>${recent.map(j => `<tr><td class="mono">${basename(j.rar_file)}</td><td>${badge(j.status)}</td><td>${timeAgo(j.completed_at)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('No recent activity');
+}
+
+// ═══════════════════════════════════════════
+//   FILE BROWSER
+// ═══════════════════════════════════════════
+async function loadBrowser(path = null) {
+  const dataPath = path || await getDataPath();
+  state.browserPath = dataPath;
+  renderBreadcrumb(dataPath);
+  document.getElementById('file-list-wrap').innerHTML = '<div class="empty"><div class="empty-title">Loading…</div></div>';
+  const items = await api(`/api/files/browse?path=${encodeURIComponent(dataPath)}`);
+  renderFileList(items);
+}
+
+async function getDataPath() {
+  // Ask the browser for the configured data path
+  try {
+    const r = await fetch('/api/files/browse');
+    const j = await r.json();
+    return state.browserPath || '/data';
+  } catch { return '/data'; }
+}
+
+function renderBreadcrumb(path) {
+  const parts = path.split('/').filter(Boolean);
+  let built = '';
+  const items = parts.map((part, i) => {
+    built += '/' + part;
+    const fullPath = built;
+    if (i === parts.length - 1) {
+      return `<span class="breadcrumb-current">${part}</span>`;
+    }
+    return `<span class="breadcrumb-item" onclick="loadBrowser('${fullPath}')">${part}</span><span class="breadcrumb-sep">/</span>`;
+  });
+  document.getElementById('breadcrumb').innerHTML =
+    `<span class="breadcrumb-item" onclick="loadBrowser('/')">Root</span><span class="breadcrumb-sep">/</span>${items.join('')}`;
+}
+
+function renderFileList(items) {
+  const wrap = document.getElementById('file-list-wrap');
+  if (!items || items.length === 0) {
+    wrap.innerHTML = emptyState('Empty folder', 'No files or subfolders found');
+    return;
+  }
+  wrap.innerHTML = `<div class="file-list">${items.map(fileItem).join('')}</div>`;
+}
+
+function fileItem(item) {
+  const iconClass = item.is_dir ? (item.rar_count > 0 ? 'rar' : 'dir') : 'file';
+  const icon = item.is_dir
+    ? `<svg width="16" height="16" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`
+    : `<svg width="16" height="16" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
+
+  const statusBadge = item.is_dir && item.rar_count > 0
+    ? badge(item.rar_status) + (item.marked_extracted ? `<span class="badge badge-completed" style="margin-left:4px">✓ Extracted</span>` : '')
+    : '';
+
+  const actions = item.is_dir ? `
+    <button class="btn btn-primary btn-icon btn-sm" title="Queue for extraction" onclick="event.stopPropagation();openEnqueue('${escStr(item.path)}')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    </button>
+    <button class="btn btn-secondary btn-icon btn-sm" title="Add to watch folders" onclick="event.stopPropagation();quickAddWatch('${escStr(item.path)}')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>` : '';
+
+  const click = item.is_dir ? `onclick="loadBrowser('${escStr(item.path)}')"` : '';
+
+  return `<div class="file-item" ${click}>
+    <div class="file-item-icon ${iconClass}">${icon}</div>
+    <div class="file-item-name">${escHtml(item.name)} ${statusBadge}</div>
+    <div class="file-item-meta">${item.is_dir && item.rar_count > 0 ? `${item.rar_count} set${item.rar_count>1?'s':''}` : fmtBytes(item.size)}</div>
+    <div class="file-item-actions">${actions}</div>
+  </div>`;
+}
+
+function browserUp() {
+  if (!state.browserPath) return;
+  const parts = state.browserPath.split('/').filter(Boolean);
+  parts.pop();
+  loadBrowser('/' + parts.join('/'));
+}
+
+function openEnqueue(path) {
+  state.enqueueTarget = path;
+  document.getElementById('enqueue-path-display').textContent = path;
+  document.getElementById('enqueue-password').value = '';
+  openModal('modal-enqueue');
+}
+
+async function submitEnqueue() {
+  const path = state.enqueueTarget;
+  const pw = document.getElementById('enqueue-password').value;
+  const action = document.getElementById('enqueue-post-action').value;
+  closeModal('modal-enqueue');
+  const ids = await api('/api/jobs', 'POST', { path, password: pw||null, post_action: action });
+  if (ids && ids.length) {
+    showToast(`Queued ${ids.length} RAR set(s)`, 'success');
+    loadPage('queue');
+  } else {
+    showToast('No new RAR sets found (may already be queued)', 'warn');
+  }
+}
+
+async function quickAddWatch(path) {
+  await api('/api/folders', 'POST', { path, enabled: true });
+  showToast('Added to watch folders', 'success');
+  loadBrowser(state.browserPath);
+}
+
+// ═══════════════════════════════════════════
+//   QUEUE
+// ═══════════════════════════════════════════
+async function loadQueue() {
+  const jobs = await api('/api/jobs?limit=200');
+  jobs.forEach(j => state.jobs[j.id] = j);
+  renderQueue(jobs);
+  updateBadge();
+}
+
+function filterQueue(f) {
+  state.queueFilter = f;
+  ['all','pending','running'].forEach(k => {
+    document.getElementById(`qf-${k}`)?.classList.toggle('btn-primary', k === f);
+    document.getElementById(`qf-${k}`)?.classList.toggle('btn-secondary', k !== f);
+  });
+  renderQueue(Object.values(state.jobs));
+}
+
+function renderQueue(jobs) {
+  let filtered = jobs;
+  if (state.queueFilter !== 'all') filtered = jobs.filter(j => j.status === state.queueFilter);
+  filtered = filtered.sort((a,b) => b.id - a.id);
+  const el = document.getElementById('queue-list');
+  if (!el) return;
+  el.innerHTML = filtered.length ? filtered.map(jobCard).join('') : emptyState('Queue is empty', 'Browse files or add watch folders to get started');
+}
+
+function jobCard(job) {
+  const isRunning = job.status === 'running';
+  const pct = Math.round(job.progress || 0);
+  const barClass = job.status === 'completed' ? 'done' : job.status === 'failed' ? 'fail' : '';
+
+  const progressHtml = (isRunning || job.status === 'completed' || job.status === 'failed') ? `
+    <div class="job-progress-label">
+      <span>${isRunning ? 'Extracting…' : job.status}</span>
+      <span style="display:flex;gap:8px">
+        <span id="eta-${job.id}">${job.eta_seconds != null ? 'ETA ' + fmtDuration(job.eta_seconds) : ''}</span>
+        <span id="pct-${job.id}">${pct}%</span>
+      </span>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar ${barClass}" id="bar-${job.id}" style="width:${pct}%"></div>
+    </div>` : '';
+
+  const errorHtml = job.error_message
+    ? `<div class="alert alert-error" style="margin-top:8px;font-size:12px">${escHtml(job.error_message)}</div>` : '';
+
+  const actions = [];
+  if (job.status === 'running' || job.status === 'pending')
+    actions.push(`<button class="btn btn-danger btn-sm" onclick="cancelJob(${job.id})">Cancel</button>`);
+  if (job.status === 'failed' || job.status === 'cancelled')
+    actions.push(`<button class="btn btn-secondary btn-sm" onclick="retryJob(${job.id})">Retry</button>`);
+  if (!['running','pending'].includes(job.status))
+    actions.push(`<button class="btn btn-secondary btn-sm" onclick="deleteJob(${job.id})">Delete</button>`);
+
+  return `<div class="job-card" id="job-card-${job.id}">
+    <div class="job-card-header">
+      <div class="job-name">${escHtml(basename(job.rar_file))}</div>
+      ${badge(job.status)}
+    </div>
+    <div class="job-path">${escHtml(job.folder_path)}</div>
+    ${progressHtml}
+    ${errorHtml}
+    <div class="job-meta">
+      <span>Source: ${job.source}</span>
+      <span>·</span><span>Post: ${job.post_action}</span>
+      <span>·</span><span>${timeAgo(job.created_at)}</span>
+    </div>
+    <div class="job-actions">${actions.join('')}</div>
+  </div>`;
+}
+
+async function cancelJob(id) {
+  await api(`/api/jobs/${id}/cancel`, 'POST');
+  const j = state.jobs[id];
+  if (j) j.status = 'cancelled';
+  renderQueue(Object.values(state.jobs));
+  updateBadge();
+}
+
+async function retryJob(id) {
+  await api(`/api/jobs/${id}/retry`, 'POST');
+  showToast('Job requeued', 'success');
+  loadQueue();
+}
+
+async function deleteJob(id) {
+  await api(`/api/jobs/${id}`, 'DELETE');
+  delete state.jobs[id];
+  renderQueue(Object.values(state.jobs));
+}
+
+async function clearHistory() {
+  if (!confirm('Clear all completed, failed and cancelled jobs?')) return;
+  await api('/api/jobs', 'DELETE');
+  const activeStatuses = ['pending','running'];
+  Object.keys(state.jobs).forEach(id => {
+    if (!activeStatuses.includes(state.jobs[id].status)) delete state.jobs[id];
+  });
+  renderQueue(Object.values(state.jobs));
+}
+
+function updateBadge() {
+  const count = Object.values(state.jobs).filter(j => j.status === 'pending' || j.status === 'running').length;
+  const badge = document.getElementById('queue-badge');
+  if (count > 0) { badge.textContent = count; badge.style.display = ''; }
+  else badge.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════
+//   WATCH FOLDERS
+// ═══════════════════════════════════════════
+async function loadWatches() {
+  const folders = await api('/api/folders');
+  renderWatches(folders);
+}
+
+function renderWatches(folders) {
+  const el = document.getElementById('watches-list');
+  if (!folders.length) {
+    el.innerHTML = emptyState('No watch folders', 'Click "+ Add Folder" to start watching a directory');
+    return;
+  }
+  el.innerHTML = folders.map(wf => `
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <div style="font-size:14px;font-weight:600;word-break:break-all">${escHtml(wf.path)}</div>
+            ${wf.marked_extracted ? '<span class="badge badge-completed">✓ Marked Extracted</span>' : ''}
+            ${!wf.enabled ? '<span class="badge badge-cancelled">Disabled</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap">
+            <span>Post-action: <strong>${wf.post_action}</strong></span>
+            ${wf.password ? '<span>Password: <strong>••••</strong></span>' : ''}
+            ${wf.last_scanned ? `<span>Last scanned: ${timeAgo(wf.last_scanned)}</span>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="scanFolder(${wf.id})">Scan Now</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleFolderEnabled(${wf.id}, ${wf.enabled})">${wf.enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleMarkExtracted(${wf.id}, ${wf.marked_extracted})">${wf.marked_extracted ? 'Unmark' : 'Mark Extracted'}</button>
+          <button class="btn btn-danger btn-sm" onclick="removeWatch(${wf.id})">Remove</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function submitAddWatch() {
+  const path = document.getElementById('wf-path').value.trim();
+  const password = document.getElementById('wf-password').value.trim();
+  const post_action = document.getElementById('wf-post-action').value;
+  if (!path) return;
+  try {
+    await api('/api/folders', 'POST', { path, password: password||null, post_action, enabled: true });
+    closeModal('modal-add-watch');
+    showToast('Watch folder added', 'success');
+    loadWatches();
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+async function scanFolder(id) {
+  const r = await api(`/api/folders/${id}/scan`, 'POST');
+  showToast(`Scan complete — ${r.queued} job(s) queued`, 'success');
+}
+
+async function scanAll() {
+  await api('/api/folders/scan-all', 'POST');
+  showToast('Full scan started', 'success');
+}
+
+async function toggleFolderEnabled(id, current) {
+  await api(`/api/folders/${id}`, 'PATCH', { enabled: !current });
+  loadWatches();
+}
+
+async function toggleMarkExtracted(id, current) {
+  await api(`/api/folders/${id}/mark-extracted?extracted=${!current}`, 'POST');
+  loadWatches();
+}
+
+async function removeWatch(id) {
+  if (!confirm('Remove this watch folder?')) return;
+  await api(`/api/folders/${id}`, 'DELETE');
+  loadWatches();
+}
+
+// ═══════════════════════════════════════════
+//   HISTORY
+// ═══════════════════════════════════════════
+let historyFilter = '';
+
+async function loadHistory() {
+  const url = historyFilter ? `/api/jobs?status=${historyFilter}&limit=500` : '/api/jobs?limit=500';
+  const jobs = await api(url);
+  jobs.forEach(j => state.jobs[j.id] = j);
+  renderHistoryRows(jobs);
+}
+
+function filterHistory(f) {
+  historyFilter = f;
+  loadHistory();
+}
+
+function renderHistoryRows(jobs) {
+  const tbody = document.getElementById('history-tbody');
+  if (!tbody) return;
+  const sorted = jobs
+    .filter(j => !['pending','running'].includes(j.status))
+    .sort((a,b) => (b.completed_at||b.created_at||'').localeCompare(a.completed_at||a.created_at||''));
+  tbody.innerHTML = sorted.length ? sorted.map(j => `<tr>
+    <td class="mono" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${escHtml(basename(j.rar_file))}</td>
+    <td>${badge(j.status)}</td>
+    <td>${j.status==='completed'?'100%':Math.round(j.progress)+'%'}</td>
+    <td>${j.source}</td>
+    <td>${timeAgo(j.completed_at)}</td>
+    <td style="display:flex;gap:4px">
+      ${j.status==='failed'?`<button class="btn btn-secondary btn-sm" onclick="retryJob(${j.id})">Retry</button>`:''}
+      <button class="btn btn-secondary btn-sm" onclick="deleteJob(${j.id})">Delete</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text3)">No history</td></tr>';
+}
+
+// ═══════════════════════════════════════════
+//   LOGS
+// ═══════════════════════════════════════════
+async function loadLogs() {
+  const url = state.logsFilter ? `/api/logs?level=${state.logsFilter}&limit=500` : '/api/logs?limit=500';
+  const entries = await api(url);
+  renderLogs(entries.reverse());
+}
+
+function filterLogs(level) {
+  state.logsFilter = level;
+  loadLogs();
+}
+
+function renderLogs(entries) {
+  const el = document.getElementById('log-container');
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty" style="padding:32px"><div class="empty-title">No log entries</div></div>';
+    return;
+  }
+  el.innerHTML = entries.map(e => {
+    const time = new Date(e.timestamp).toLocaleTimeString();
+    return `<div class="log-entry">
+      <span class="log-time">${time}</span>
+      <span class="log-level ${e.level}">${e.level}</span>
+      <span class="log-msg">${escHtml(e.message)}${e.job_id ? ` <span style="color:var(--text3)">(job #${e.job_id})</span>` : ''}</span>
+    </div>`;
+  }).join('');
+  if (state.autoscroll) el.scrollTop = el.scrollHeight;
+}
+
+function toggleAutoscroll() {
+  state.autoscroll = !state.autoscroll;
+  const sw = document.getElementById('autoscroll-switch');
+  sw.classList.toggle('on', state.autoscroll);
+}
+
+async function clearLogs() {
+  if (!confirm('Clear all log entries?')) return;
+  await api('/api/logs', 'DELETE');
+  loadLogs();
+}
+
+// ═══════════════════════════════════════════
+//   SETTINGS
+// ═══════════════════════════════════════════
+async function loadSettings() {
+  const s = await api('/api/settings');
+  document.getElementById('s-interval').value = s.scan_interval_minutes;
+  document.getElementById('s-concurrent').value = s.max_concurrent_jobs;
+  document.getElementById('s-post-action').value = s.default_post_action;
+  document.getElementById('s-trash').value = s.trash_folder;
+}
+
+async function saveSettings() {
+  await api('/api/settings', 'PUT', {
+    scan_interval_minutes: parseInt(document.getElementById('s-interval').value),
+    max_concurrent_jobs: parseInt(document.getElementById('s-concurrent').value),
+    default_post_action: document.getElementById('s-post-action').value,
+    trash_folder: document.getElementById('s-trash').value,
+  });
+  showToast('Settings saved', 'success');
+}
+
+// ═══════════════════════════════════════════
+//   THEME
+// ═══════════════════════════════════════════
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  document.getElementById('theme-label').textContent = isDark ? 'Dark' : 'Light';
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  document.getElementById('theme-label').textContent = saved === 'dark' ? 'Light' : 'Dark';
+}
+
+// ═══════════════════════════════════════════
+//   MODAL
+// ═══════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open') }
+function closeModal(id) { document.getElementById(id).classList.remove('open') }
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+
+// ═══════════════════════════════════════════
+//   TOAST
+// ═══════════════════════════════════════════
+function showToast(msg, type = 'info') {
+  const colors = { success: 'var(--success)', error: 'var(--error)', warn: 'var(--warn)', info: 'var(--info)' };
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:20px;right:20px;z-index:9999;
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:10px 16px;box-shadow:var(--shadow);font-size:13.5px;color:var(--text);
+    display:flex;align-items:center;gap:8px;max-width:320px;
+    animation:slideIn .2s ease;border-left:3px solid ${colors[type]||colors.info}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+const style = document.createElement('style');
+style.textContent = '@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}';
+document.head.appendChild(style);
+
+// ═══════════════════════════════════════════
+//   API HELPER
+// ═══════════════════════════════════════════
+async function api(url, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+// ═══════════════════════════════════════════
+//   UTILS
+// ═══════════════════════════════════════════
+function badge(status) {
+  const labels = {
+    pending:'Pending', running:'Running', completed:'Completed',
+    failed:'Failed', cancelled:'Cancelled', skipped:'Skipped',
+    has_rars:'Has RARs', in_progress:'In Progress', completed:'Completed',
+    none:'No RARs',
+  };
+  return `<span class="badge badge-${status}">${labels[status]||status}</span>`;
+}
+
+function emptyState(title, sub='') {
+  return `<div class="empty">
+    <svg width="40" height="40" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+    <div class="empty-title">${title}</div>${sub?`<p>${sub}</p>`:''}
+  </div>`;
+}
+
+function fmtBytes(b) {
+  if (!b) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return b.toFixed(i?1:0) + ' ' + u[i];
+}
+
+function fmtDuration(s) {
+  if (s == null) return '';
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
+  return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const diff = (Date.now() - new Date(iso+'Z').getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+
+function basename(p) { return p ? p.split('/').pop() : ''; }
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escStr(s) { return String(s||'').replace(/'/g,"\\'").replace(/\\/g,'\\\\'); }
+function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+// ═══════════════════════════════════════════
+//   INIT
+// ═══════════════════════════════════════════
+initTheme();
+connectWS();
+loadDashboard();
+
+// Poll for updates every 5 seconds as fallback
+setInterval(() => {
+  if (state.currentPage === 'dashboard') loadDashboard();
+  else if (state.currentPage === 'queue') loadQueue();
+  else if (state.currentPage === 'logs') loadLogs();
+}, 8000);
+</script>
+</body>
+</html>
