@@ -2,8 +2,6 @@
 
 A self-hosted Docker container for automatically extracting split RAR archives — built for Unraid but works anywhere. Features a sleek web UI with a file browser, job queue, watch folders, scheduled scanning, real-time progress, and full log visibility.
 
-Built with the assistance of Claude AI by Anthropic.
-
 ---
 
 ## Features
@@ -148,6 +146,16 @@ Open `http://<your-server-ip>:8080`.
 | `PUT` | `/api/settings` | Update settings |
 | `GET` | `/api/logs` | Get log entries |
 | `DELETE` | `/api/logs` | Clear logs |
+| `POST` | `/api/webhook/sonarr` | Sonarr webhook receiver (`X-Api-Key` header required) |
+| `POST` | `/api/webhook/radarr` | Radarr webhook receiver (`X-Api-Key` header required) |
+| `POST` | `/api/webhook/lidarr` | Lidarr webhook receiver (`X-Api-Key` header required) |
+| `POST` | `/api/webhook/readarr` | Readarr webhook receiver (`X-Api-Key` header required) |
+| `GET` | `/api/webhooks/sources` | List webhook source status |
+| `PATCH` | `/api/webhooks/sources/{source}?enabled=` | Enable/disable a source |
+| `POST` | `/api/webhooks/sources/{source}/generate-key` | Generate new API key (returned once) |
+| `DELETE` | `/api/webhooks/sources/{source}/key` | Revoke API key |
+| `GET` | `/api/webhooks/enabled` | Get master webhook toggle |
+| `PUT` | `/api/webhooks/enabled?enabled=` | Set master webhook toggle |
 
 WebSocket at `ws://<host>/ws` — events: `new_job`, `job_update`, `job_progress`, `exclusion_added`, `exclusion_removed`.
 
@@ -203,6 +211,14 @@ unrartool/
 ---
 
 ## Changelog
+
+### v1.2.0
+- **Webhook Integration** — Sonarr, Radarr, Lidarr, and Readarr can now notify UnrarTool the instant a download completes, triggering extraction immediately without any filesystem polling delay. Especially useful on SMB/NFS mounts where filesystem events are unreliable.
+- **Security** — Per-source API keys (one per *arr app). Keys are generated with 256-bit entropy, stored as SHA256 hashes (never plaintext), transmitted via `X-Api-Key` header only (never in URLs), shown exactly once in the UI, and never written to logs. IP-based rate limiting blocks sources after 5 failed attempts for 5 minutes. Constant-time key comparison prevents timing attacks.
+- **Optional toggle** — Webhooks are disabled by default. Enable in Settings → Webhook Integration. Each source (Sonarr/Radarr/Lidarr/Readarr) has its own enable toggle and key.
+- **Webhook logs** — every hit (accepted and rejected) is recorded in the log viewer with source, IP, and event type
+- **Test event support** — clicking "Test" in Sonarr/Radarr returns a success response without triggering extraction
+- **Exclusions respected** — webhook-triggered folders are still skipped if marked as done
 
 ### v1.1.0
 - **File Browser: Filter & Sort** — filter by name (search), type (All / Folders / RAR Only / Files / Not Done), sort by name, modified date, size, or RAR count

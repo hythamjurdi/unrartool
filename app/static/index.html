@@ -401,7 +401,8 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 
     <!-- SETTINGS -->
     <div class="page" id="page-settings">
-      <div class="card" style="max-width:520px">
+      <!-- General Settings -->
+      <div class="card" style="max-width:600px;margin-bottom:16px">
         <div class="card-hd"><div class="card-title">General Settings</div></div>
         <div class="fg"><label class="fl">Scan Interval (minutes)</label><input type="number" class="fi" id="s-interval" min="1" max="1440"><div class="fh">How often the scheduler checks all watch folders.</div></div>
         <div class="fg"><label class="fl">Max Concurrent Extractions</label><input type="number" class="fi" id="s-concurrent" min="1" max="10"><div class="fh">1 is recommended for most setups.</div></div>
@@ -410,13 +411,67 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
         <div class="fg"><label class="fl">Trash Folder Path</label><input type="text" class="fi" id="s-trash" placeholder="/config/trash"></div>
         <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" onclick="saveSettings()">Save Settings</button></div>
       </div>
+
+      <!-- Webhook Integration -->
+      <div class="card" style="max-width:600px">
+        <div class="card-hd">
+          <div>
+            <div class="card-title">Webhook Integration</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">
+              Faster than filesystem watching — Sonarr/Radarr notify UnrarTool the instant a download completes.
+              Works reliably on SMB/NFS mounts where filesystem events fail.
+            </div>
+          </div>
+          <label class="sw" style="flex-shrink:0">
+            <div class="sw-track" id="wh-master-sw" onclick="toggleWebhooks()"><div class="sw-thumb"></div></div>
+            <span style="font-size:13px;color:var(--text2)" id="wh-master-lbl">Disabled</span>
+          </label>
+        </div>
+
+        <div id="wh-disabled-notice" class="alert alert-info" style="margin-bottom:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Enable webhooks above to configure per-app API keys and get faster extraction triggers.
+        </div>
+
+        <div id="wh-sources" style="display:none">
+          <div class="divider"></div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6">
+            Each app gets its own API key. Keys are transmitted via the <code style="background:var(--surface3);padding:1px 5px;border-radius:3px">X-Api-Key</code> header and stored as a SHA256 hash — the plaintext is shown <strong>once</strong> on generation and never stored.
+          </div>
+          <div id="wh-source-list"></div>
+        </div>
+      </div>
     </div>
 
   </div>
 </div>
 </div>
 
-<!-- ═══ MODALS ═══ -->
+<!-- Key reveal modal — shown once after generation -->
+<div class="overlay" id="m-key-reveal">
+  <div class="modal">
+    <div class="modal-title">🔑 Your API Key — Save This Now</div>
+    <div class="alert alert-warn" style="margin-bottom:14px">
+      This key will <strong>never be shown again</strong>. Copy it now and paste it into your *arr app.
+    </div>
+    <div style="background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:12px 14px;font-family:var(--mono);font-size:13px;word-break:break-all;margin-bottom:14px;position:relative" id="key-reveal-box"></div>
+    <div class="fg">
+      <label class="fl" id="key-reveal-url-label">Webhook URL</label>
+      <div style="background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-family:var(--mono);font-size:12.5px;word-break:break-all" id="key-reveal-url"></div>
+      <div class="fh">Paste this URL into your app under Settings → Connect → Webhook → URL</div>
+    </div>
+    <div class="fg">
+      <label class="fl">Header to set in your app</label>
+      <div style="background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-family:var(--mono);font-size:12.5px">X-Api-Key: <span id="key-reveal-preview"></span></div>
+      <div class="fh">In Sonarr/Radarr: Settings → Connect → Webhook → Headers → add X-Api-Key with the key above</div>
+    </div>
+    <div class="modal-acts">
+      <button class="btn btn-secondary" onclick="copyKey()">Copy Key</button>
+      <button class="btn btn-primary" onclick="closeM('m-key-reveal')">Done — I've saved it</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="m-add-watch">
   <div class="modal">
     <div class="modal-title">Add Watch Folder</div>
@@ -967,20 +1022,143 @@ async function clearLogs() { if(!confirm('Clear all logs?'))return; await api('/
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const s = await api('/api/settings');
-  el('s-interval').value = s.scan_interval_minutes;
+  const [s, whEnabled] = await Promise.all([
+    api('/api/settings'),
+    api('/api/webhooks/enabled'),
+  ]);
+  el('s-interval').value  = s.scan_interval_minutes;
   el('s-concurrent').value = s.max_concurrent_jobs;
-  el('s-post').value = s.default_post_action;
-  el('s-trash').value = s.trash_folder;
+  el('s-post').value      = s.default_post_action;
+  el('s-trash').value     = s.trash_folder;
+
+  // Webhook master toggle
+  const enabled = whEnabled.enabled;
+  const sw = el('wh-master-sw');
+  sw.classList.toggle('on', enabled);
+  el('wh-master-lbl').textContent = enabled ? 'Enabled' : 'Disabled';
+  el('wh-disabled-notice').style.display = enabled ? 'none' : '';
+  el('wh-sources').style.display = enabled ? '' : 'none';
+
+  if (enabled) await loadWebhookSources();
 }
+
 async function saveSettings() {
-  await api('/api/settings','PUT',{
-    scan_interval_minutes:+el('s-interval').value,
-    max_concurrent_jobs:+el('s-concurrent').value,
-    default_post_action:el('s-post').value,
-    trash_folder:el('s-trash').value,
+  await api('/api/settings', 'PUT', {
+    scan_interval_minutes: +el('s-interval').value,
+    max_concurrent_jobs:   +el('s-concurrent').value,
+    default_post_action:   el('s-post').value,
+    trash_folder:          el('s-trash').value,
   });
-  toast('Settings saved','ok');
+  toast('Settings saved', 'ok');
+}
+
+// ─── WEBHOOK SETTINGS ─────────────────────────────────────────────────────
+
+const SOURCE_META = {
+  sonarr:  { label: 'Sonarr',  color: '#00CCFF', desc: 'TV series downloader' },
+  radarr:  { label: 'Radarr',  color: '#FFC230', desc: 'Movie downloader' },
+  lidarr:  { label: 'Lidarr',  color: '#00E5FF', desc: 'Music downloader' },
+  readarr: { label: 'Readarr', color: '#FF7F50', desc: 'Books downloader' },
+};
+
+async function toggleWebhooks() {
+  const sw = el('wh-master-sw');
+  const nowEnabled = !sw.classList.contains('on');
+  await api(`/api/webhooks/enabled?enabled=${nowEnabled}`, 'PUT');
+  sw.classList.toggle('on', nowEnabled);
+  el('wh-master-lbl').textContent = nowEnabled ? 'Enabled' : 'Disabled';
+  el('wh-disabled-notice').style.display = nowEnabled ? 'none' : '';
+  el('wh-sources').style.display = nowEnabled ? '' : 'none';
+  if (nowEnabled) await loadWebhookSources();
+}
+
+async function loadWebhookSources() {
+  const sources = await api('/api/webhooks/sources');
+  const wrap = el('wh-source-list');
+  if (!wrap) return;
+  wrap.innerHTML = sources.map(s => webhookSourceCard(s)).join('');
+}
+
+function webhookSourceCard(s) {
+  const meta = SOURCE_META[s.source] || { label: s.source, color: '#888', desc: '' };
+  const baseUrl = `${location.protocol}//${location.host}`;
+  const url = `${baseUrl}/api/webhook/${s.source}`;
+
+  return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:10px;height:10px;border-radius:50%;background:${meta.color};flex-shrink:0"></div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600">${meta.label}</div>
+        <div style="font-size:12px;color:var(--text2)">${meta.desc}</div>
+      </div>
+      <label class="sw">
+        <div class="sw-track ${s.enabled ? 'on' : ''}" id="wh-sw-${s.source}"
+          onclick="toggleSource('${s.source}',${s.enabled})"><div class="sw-thumb"></div></div>
+        <span style="font-size:12px;color:var(--text2)">${s.enabled ? 'Active' : 'Inactive'}</span>
+      </label>
+    </div>
+
+    ${s.has_key ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;background:var(--surface2);border-radius:var(--radius-sm);padding:8px 12px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+      <span style="font-size:12px;color:var(--ok);font-weight:600">Key configured</span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text3)">••••••••${esc(s.key_suffix || '????')}</span>
+      <div style="flex:1"></div>
+      <button class="btn btn-danger btn-sm" onclick="revokeKey('${s.source}')">Revoke</button>
+      <button class="btn btn-warn btn-sm" onclick="generateKey('${s.source}')">Regenerate</button>
+    </div>` : `
+    <div style="margin-bottom:10px">
+      <button class="btn btn-primary btn-sm" onclick="generateKey('${s.source}')">Generate API Key</button>
+      <span style="font-size:12px;color:var(--text3);margin-left:8px">No key — source inactive until a key is generated</span>
+    </div>`}
+
+    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:8px 12px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Webhook URL</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--text);word-break:break-all">${url}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">
+        In ${meta.label}: Settings → Connect → Webhook → URL = above | Header: <code>X-Api-Key</code> = your key
+      </div>
+    </div>
+    ${s.hit_count > 0 ? `<div style="font-size:12px;color:var(--text3);margin-top:8px">
+      ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} · Last: ${ago(s.last_hit)}
+    </div>` : ''}
+  </div>`;
+}
+
+async function toggleSource(source, currentEnabled) {
+  await api(`/api/webhooks/sources/${source}?enabled=${!currentEnabled}`, 'PATCH');
+  await loadWebhookSources();
+}
+
+let _revealedKey = '';
+
+async function generateKey(source) {
+  if (source && !confirm(`Generate a new API key for ${SOURCE_META[source]?.label || source}? Any existing key will be invalidated.`)) return;
+  const r = await api(`/api/webhooks/sources/${source}/generate-key`, 'POST');
+  _revealedKey = r.key;
+
+  // Show key reveal modal
+  el('key-reveal-box').textContent = r.key;
+  el('key-reveal-preview').textContent = r.key;
+  el('key-reveal-url-label').textContent = `Webhook URL for ${SOURCE_META[source]?.label || source}`;
+  el('key-reveal-url').textContent = `${location.protocol}//${location.host}/api/webhook/${source}`;
+  openM('m-key-reveal');
+
+  await loadWebhookSources();
+}
+
+async function revokeKey(source) {
+  if (!confirm(`Revoke the API key for ${SOURCE_META[source]?.label || source}? The source will stop receiving webhooks immediately.`)) return;
+  await api(`/api/webhooks/sources/${source}/key`, 'DELETE');
+  toast('Key revoked — source disabled', 'warn');
+  await loadWebhookSources();
+}
+
+function copyKey() {
+  if (!_revealedKey) return;
+  navigator.clipboard.writeText(_revealedKey)
+    .then(() => toast('Key copied to clipboard', 'ok'))
+    .catch(() => toast('Copy failed — select the key manually', 'warn'));
 }
 
 // ─── THEME ────────────────────────────────────────────────────────────────

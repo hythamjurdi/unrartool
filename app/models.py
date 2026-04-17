@@ -47,6 +47,24 @@ class LogEntry(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 
+class WebhookSource(Base):
+    """
+    Stores per-source webhook configuration.
+    The API key is NEVER stored plaintext — only its SHA256 hash.
+    key_suffix stores the last 4 chars of the original key for UI display only.
+    """
+    __tablename__ = "webhook_sources"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    source      = Column(String, unique=True, nullable=False)  # sonarr|radarr|lidarr|readarr
+    enabled     = Column(Boolean, default=False)
+    key_hash    = Column(String, nullable=True)   # SHA256 hex digest
+    key_suffix  = Column(String, nullable=True)   # last 4 chars of plaintext key (display only)
+    hit_count   = Column(Integer, default=0)
+    last_hit    = Column(DateTime, nullable=True)
+    created_at  = Column(DateTime, default=datetime.utcnow)
+
+
 class Exclusion(Base):
     """
     Tracks paths (folders or specific RAR files) that should never be
