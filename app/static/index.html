@@ -194,6 +194,20 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 .alert-ok{background:var(--ok-dim);color:var(--ok)}
 .alert-err{background:var(--err-dim);color:var(--err)}
 .alert-warn{background:var(--warn-dim);color:var(--warn)}
+
+/* automation tabs */
+.auto-tab{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;border:none;background:transparent;color:var(--text2);cursor:pointer;transition:all var(--t)}
+.auto-tab:hover{background:var(--surface3);color:var(--text)}
+.auto-tab.active{background:var(--accent);color:#fff}
+.auto-tab svg{flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* automation source status cards */
+.src-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.src-card-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.src-card-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.src-card-label{font-size:13.5px;font-weight:600;flex:1}
+.src-card-status{font-size:12px;font-weight:600}
+.src-card-meta{font-size:12px;color:var(--text3);line-height:1.6}
 .divider{height:1px;background:var(--border);margin:16px 0}
 .chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface3);border:1px solid var(--border);border-radius:20px;padding:2px 10px;font-size:12px;color:var(--text2)}
 </style>
@@ -228,9 +242,9 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
       <span class="nav-label">Queue</span>
       <span class="nav-badge" id="queue-badge" style="display:none">0</span>
     </div>
-    <div class="nav-item" data-page="watches" onclick="go('watches')">
-      <svg width="17" height="17" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-      <span class="nav-label">Watch Folders</span>
+    <div class="nav-item" data-page="sources" onclick="go('sources')">
+      <svg width="17" height="17" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span class="nav-label">Sources</span>
     </div>
     <div class="nav-item" data-page="exclusions" onclick="go('exclusions')">
       <svg width="17" height="17" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
@@ -270,6 +284,13 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
       <div class="stats" id="stats"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-hd">
+          <div class="card-title">Scanning Sources</div>
+          <button class="btn btn-secondary btn-sm" onclick="go('sources')">Manage</button>
+        </div>
+        <div id="dash-sources" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px"></div>
+      </div>
       <div class="card" style="margin-bottom:16px">
         <div class="card-hd"><div class="card-title">Active Jobs</div><button class="btn btn-secondary btn-sm" onclick="go('queue')">View all</button></div>
         <div id="dash-active"></div>
@@ -343,13 +364,47 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
       <div id="queue-list"></div>
     </div>
 
-    <!-- WATCH FOLDERS -->
-    <div class="page" id="page-watches">
-      <div class="alert alert-info" style="margin-bottom:14px">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Watch folders are monitored automatically. New RARs are queued the moment they appear. After extraction, individual RAR sets are auto-excluded so they're never re-extracted.
+    <!-- AUTOMATION -->
+    <div class="page" id="page-sources">
+
+      <!-- SOURCE STATUS CARDS -->
+      <div id="auto-source-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:24px"></div>
+
+      <!-- TAB BAR -->
+      <div style="display:flex;gap:0;margin-bottom:16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;width:fit-content">
+        <button class="auto-tab active" id="auto-tab-watch" onclick="autoTab('watch')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Watch Folders
+        </button>
+        <button class="auto-tab" id="auto-tab-webhook" onclick="autoTab('webhook')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+          *arr Webhooks
+        </button>
       </div>
-      <div id="watches-list"></div>
+
+      <!-- WATCH FOLDERS PANEL -->
+      <div id="auto-panel-watch">
+        <div id="watches-list"></div>
+      </div>
+
+      <!-- WEBHOOKS PANEL -->
+      <div id="auto-panel-webhook" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div style="font-size:13px;color:var(--text2)">Receive instant extraction triggers from your *arr apps when a download completes.</div>
+          <label class="sw" style="flex-shrink:0;margin-left:16px">
+            <div class="sw-track" id="wh-master-sw" onclick="toggleWebhooks()"><div class="sw-thumb"></div></div>
+            <span style="font-size:13px;color:var(--text2)" id="wh-master-lbl">Disabled</span>
+          </label>
+        </div>
+        <div id="wh-disabled-notice" class="alert alert-info">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Enable webhooks to connect your Sonarr, Radarr, Lidarr, and Readarr apps.
+        </div>
+        <div id="wh-sources" style="display:none">
+          <div id="wh-source-list"></div>
+        </div>
+      </div>
+
     </div>
 
     <!-- EXCLUSIONS -->
@@ -412,32 +467,7 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
         <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" onclick="saveSettings()">Save Settings</button></div>
       </div>
 
-      <!-- Webhook Integration -->
-      <div class="card" style="max-width:600px">
-        <div class="card-hd">
-          <div>
-            <div class="card-title">Webhook Integration</div>
-            <div style="font-size:12px;color:var(--text2);margin-top:2px">
-              Faster than filesystem watching — Sonarr/Radarr notify UnrarTool the instant a download completes.
-              Works reliably on SMB/NFS mounts where filesystem events fail.
-            </div>
-          </div>
-          <label class="sw" style="flex-shrink:0">
-            <div class="sw-track" id="wh-master-sw" onclick="toggleWebhooks()"><div class="sw-thumb"></div></div>
-            <span style="font-size:13px;color:var(--text2)" id="wh-master-lbl">Disabled</span>
-          </label>
-        </div>
 
-        <div id="wh-disabled-notice" class="alert alert-info" style="margin-bottom:0">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Enable webhooks to connect your Sonarr, Radarr, Lidarr, and Readarr apps for instant extraction triggers.
-        </div>
-
-        <div id="wh-sources" style="display:none">
-          <div class="divider"></div>
-          <div id="wh-source-list"></div>
-        </div>
-      </div>
     </div>
 
   </div>
@@ -511,10 +541,10 @@ function onWS(m) {
 }
 
 // ─── NAVIGATION ──────────────────────────────────────────────────────────
-const PAGE_TITLES = {dashboard:'Dashboard',browser:'File Browser',queue:'Queue',watches:'Watch Folders',exclusions:'Exclusions',history:'History',logs:'Logs',settings:'Settings'};
+const PAGE_TITLES = {dashboard:'Dashboard',browser:'File Browser',queue:'Queue',sources:'Sources',exclusions:'Exclusions',history:'History',logs:'Logs',settings:'Settings'};
 const PAGE_ACTS = {
   browser: () => `<button class="btn btn-secondary btn-sm" onclick="browserUp()">↑ Up</button>`,
-  watches: () => `<button class="btn btn-primary btn-sm" onclick="openM('m-add-watch')">+ Add Folder</button><button class="btn btn-secondary btn-sm" onclick="scanAll()">Scan All Now</button>`,
+  sources: () => `<button class="btn btn-primary btn-sm" onclick="openM('m-add-watch')">+ Add Watch Folder</button><button class="btn btn-secondary btn-sm" onclick="scanAll()">Scan All Now</button>`,
 };
 function go(page) {
   S.page = page;
@@ -529,7 +559,7 @@ function loadPage(p) {
   if (p==='dashboard') loadDashboard();
   else if (p==='browser') loadBrowser(S.browserPath);
   else if (p==='queue') loadQueue();
-  else if (p==='watches') loadWatches();
+  else if (p==='sources') loadAutomation();
   else if (p==='exclusions') loadExclusions();
   else if (p==='history') loadHistory();
   else if (p==='logs') loadLogs();
@@ -543,10 +573,19 @@ function refreshViews() {
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────
 async function loadDashboard() {
-  const jobs = await api('/api/jobs?limit=500');
+  const [jobs, folders, whSources, whEnabled] = await Promise.all([
+    api('/api/jobs?limit=500'),
+    api('/api/folders'),
+    api('/api/webhooks/sources'),
+    api('/api/webhooks/enabled'),
+  ]);
   jobs.forEach(j => S.jobs[j.id] = j);
+  S.dashFolders   = folders;
+  S.dashWHSources = whSources;
+  S.dashWHEnabled = whEnabled.enabled;
   renderDash();
 }
+
 function renderDash() {
   const jobs = Object.values(S.jobs);
   const c = {pending:0,running:0,completed:0,failed:0};
@@ -557,10 +596,100 @@ function renderDash() {
     <div class="stat"><div class="stat-label">Completed</div><div class="stat-val c-ok">${c.completed}</div></div>
     <div class="stat"><div class="stat-label">Failed</div><div class="stat-val c-err">${c.failed}</div></div>
     <div class="stat"><div class="stat-label">Pending</div><div class="stat-val c-warn">${c.pending}</div></div>`;
+
+  // Scanning sources widget
+  const folders  = S.dashFolders   || [];
+  const whs      = S.dashWHSources || [];
+  const whOn     = S.dashWHEnabled || false;
+  const srcCards = [];
+
+  // Manual source always shown
+  srcCards.push(srcStatusCard({
+    dot: '#a78bfa', label: 'Manual',
+    status: 'Always available', statusColor: 'var(--text3)',
+    meta: 'File Browser → select folders → Extract',
+  }));
+
+  // Filesystem watcher
+  const activeFolders = folders.filter(f => f.enabled && !f.marked_extracted);
+  srcCards.push(srcStatusCard({
+    dot: '#38bdf8', label: 'Filesystem Watcher',
+    status: activeFolders.length > 0 ? `${activeFolders.length} folder${activeFolders.length>1?'s':''} watched` : 'No folders configured',
+    statusColor: activeFolders.length > 0 ? 'var(--ok)' : 'var(--text3)',
+    meta: activeFolders.length > 0
+      ? (folders.find(f=>f.last_scanned) ? `Last scanned ${ago(folders.sort((a,b)=>(b.last_scanned||'').localeCompare(a.last_scanned||''))[0]?.last_scanned)}` : 'Waiting for events')
+      : 'Add folders in Sources',
+  }));
+
+  // Scheduler
+  srcCards.push(srcStatusCard({
+    dot: '#9898c0', label: 'Scheduler',
+    status: activeFolders.length > 0 ? 'Running' : 'Idle',
+    statusColor: activeFolders.length > 0 ? 'var(--ok)' : 'var(--text3)',
+    meta: activeFolders.length > 0 ? 'Periodic background scan' : 'Add watch folders to activate',
+  }));
+
+  // *arr webhooks
+  if (whOn) {
+    const activeSrcs = whs.filter(s => s.enabled && s.has_key);
+    activeSrcs.forEach(s => {
+      const meta = {sonarr:{color:'#00CCFF',label:'Sonarr'},radarr:{color:'#FFC230',label:'Radarr'},lidarr:{color:'#00E5FF',label:'Lidarr'},readarr:{color:'#FF7F50',label:'Readarr'}};
+      const m = meta[s.source] || {color:'#888',label:s.source};
+      srcCards.push(srcStatusCard({
+        dot: m.color, label: m.label + ' Webhook',
+        status: `${s.hit_count || 0} hits`,
+        statusColor: 'var(--ok)',
+        meta: s.last_hit ? `Last trigger: ${ago(s.last_hit)}` : 'Waiting for first trigger',
+      }));
+    });
+    if (activeSrcs.length === 0) {
+      srcCards.push(srcStatusCard({
+        dot: '#444', label: '*arr Webhooks',
+        status: 'Enabled but not configured',
+        statusColor: 'var(--warn)',
+        meta: 'Go to Sources → *arr Webhooks to set up',
+      }));
+    }
+  } else {
+    srcCards.push(srcStatusCard({
+      dot: '#444', label: '*arr Webhooks',
+      status: 'Disabled',
+      statusColor: 'var(--text3)',
+      meta: 'Enable in Sources → *arr Webhooks',
+    }));
+  }
+
+  el('dash-sources').innerHTML = srcCards.join('');
+
   const active = jobs.filter(j => j.status==='running'||j.status==='pending');
   el('dash-active').innerHTML = active.length ? active.slice(0,5).map(jobCard).join('') : emptyState('No active jobs','Queue a folder to get started');
   const recent = jobs.filter(j=>j.status==='completed'||j.status==='failed').sort((a,b)=>(b.completed_at||'').localeCompare(a.completed_at||'')).slice(0,8);
-  el('dash-recent').innerHTML = recent.length ? `<div class="tbl-wrap"><table><thead><tr><th>Archive</th><th>Status</th><th>Completed</th></tr></thead><tbody>${recent.map(j=>`<tr><td class="mono">${esc(basename(j.rar_file))}</td><td>${bdg(j.status)}</td><td>${ago(j.completed_at)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('No recent activity');
+  el('dash-recent').innerHTML = recent.length ? `<div class="tbl-wrap"><table><thead><tr><th>Archive</th><th>Status</th><th>Source</th><th>Completed</th></tr></thead><tbody>${recent.map(j=>`<tr><td class="mono">${esc(basename(j.rar_file))}</td><td>${bdg(j.status)}</td><td>${srcBadge(j.source)}</td><td>${ago(j.completed_at)}</td></tr>`).join('')}</tbody></table></div>` : emptyState('No recent activity');
+}
+
+function srcStatusCard({dot,label,status,statusColor,meta}) {
+  return `<div class="src-card">
+    <div class="src-card-top">
+      <div class="src-card-dot" style="background:${dot}"></div>
+      <div class="src-card-label">${label}</div>
+    </div>
+    <div class="src-card-status" style="color:${statusColor};margin-bottom:4px">${status}</div>
+    <div class="src-card-meta">${meta}</div>
+  </div>`;
+}
+
+function srcBadge(source) {
+  const MAP = {
+    manual:           {cls:'src-manual',    label:'Manual'},
+    watch:            {cls:'src-watch',     label:'Watcher'},
+    scheduled:        {cls:'src-scheduled', label:'Scheduler'},
+    webhook_sonarr:   {cls:'src-sonarr',    label:'Sonarr'},
+    webhook_radarr:   {cls:'src-radarr',    label:'Radarr'},
+    webhook_lidarr:   {cls:'src-lidarr',    label:'Lidarr'},
+    webhook_readarr:  {cls:'src-readarr',   label:'Readarr'},
+  };
+  const m = MAP[source] || {cls:'src-manual', label: source || 'Manual'};
+  return `<span class="src-badge ${m.cls}">${m.label}</span>`;
 }
 
 // ─── FILE BROWSER ─────────────────────────────────────────────────────────
@@ -880,7 +1009,7 @@ function jobCard(job) {
     <div class="job-card-hd"><div class="job-name">${esc(basename(job.rar_file))}</div>${bdg(job.status)}</div>
     <div class="job-path">${esc(job.folder_path)}</div>
     ${progHtml}${errHtml}
-    <div class="job-meta"><span>Source: ${job.source}</span><span>·</span><span>Post: ${job.post_action}</span><span>·</span><span>${ago(job.created_at)}</span></div>
+    <div class="job-meta">${srcBadge(job.source)}<span>·</span><span>Post: ${job.post_action}</span><span>·</span><span>${ago(job.created_at)}</span></div>
     <div class="job-acts">${acts.join('')}</div>
   </div>`;
 }
@@ -898,9 +1027,99 @@ function updateBadge() {
   const b = el('queue-badge'); b.textContent=n; b.style.display = n>0?'':'none';
 }
 
+// ─── AUTOMATION PAGE ──────────────────────────────────────────────────────
+
+async function loadAutomation() {
+  // Load both panels in parallel; render source status cards at top
+  const [folders, whs, whEnabled] = await Promise.all([
+    api('/api/folders'),
+    api('/api/webhooks/sources'),
+    api('/api/webhooks/enabled'),
+  ]);
+
+  // Source status cards at top of page
+  const grid = el('auto-source-grid');
+  if (grid) {
+    const activeFolders = folders.filter(f => f.enabled && !f.marked_extracted);
+    const cards = [];
+
+    cards.push(autoSrcCard({dot:'#38bdf8', label:'Filesystem Watcher',
+      status: activeFolders.length > 0 ? `${activeFolders.length} folder${activeFolders.length>1?'s':''} active` : 'No folders',
+      ok: activeFolders.length > 0,
+      meta: activeFolders.length > 0 ? 'Monitors folders for new RARs in real time' : 'Add a watch folder below'}));
+
+    cards.push(autoSrcCard({dot:'#9898c0', label:'Scheduler',
+      status: activeFolders.length > 0 ? 'Running' : 'Idle',
+      ok: activeFolders.length > 0,
+      meta: 'Periodic scan of all watch folders'}));
+
+    const activeSrcs = whs.filter(s => s.enabled && s.has_key);
+    if (whEnabled.enabled) {
+      if (activeSrcs.length > 0) {
+        activeSrcs.forEach(s => {
+          const meta = {sonarr:{color:'#00CCFF',label:'Sonarr'},radarr:{color:'#FFC230',label:'Radarr'},lidarr:{color:'#00E5FF',label:'Lidarr'},readarr:{color:'#FF7F50',label:'Readarr'}};
+          const m = meta[s.source]||{color:'#888',label:s.source};
+          cards.push(autoSrcCard({dot:m.color, label:m.label+' Webhook',
+            status:`${s.hit_count||0} hits`, ok:true,
+            meta: s.last_hit ? `Last: ${ago(s.last_hit)}` : 'Waiting for first trigger'}));
+        });
+      } else {
+        cards.push(autoSrcCard({dot:'#f59e0b', label:'*arr Webhooks',
+          status:'Enabled — not configured', ok:false,
+          meta:'Enter URL and API key below'}));
+      }
+    } else {
+      cards.push(autoSrcCard({dot:'#444', label:'*arr Webhooks',
+        status:'Disabled', ok:false,
+        meta:'Toggle on below to connect *arr apps'}));
+    }
+    grid.innerHTML = cards.join('');
+  }
+
+  // Render watch folders into existing panel
+  renderWatchList(folders);
+
+  // Render webhook panel state
+  const whOn = whEnabled.enabled;
+  const masterSw = el('wh-master-sw');
+  if (masterSw) masterSw.classList.toggle('on', whOn);
+  const masterLbl = el('wh-master-lbl');
+  if (masterLbl) masterLbl.textContent = whOn ? 'Enabled' : 'Disabled';
+  const notice = el('wh-disabled-notice');
+  const sources = el('wh-sources');
+  if (notice) notice.style.display = whOn ? 'none' : '';
+  if (sources) sources.style.display = whOn ? '' : 'none';
+  if (whOn) {
+    const wrap = el('wh-source-list');
+    if (wrap) wrap.innerHTML = whs.map(s => webhookSourceCard(s)).join('');
+  }
+}
+
+function autoSrcCard({dot,label,status,ok,meta}) {
+  return `<div class="src-card">
+    <div class="src-card-top">
+      <div class="src-card-dot" style="background:${dot}"></div>
+      <div class="src-card-label">${label}</div>
+    </div>
+    <div class="src-card-status" style="color:${ok?'var(--ok)':'var(--text3)'};margin-bottom:4px">${status}</div>
+    <div class="src-card-meta">${meta}</div>
+  </div>`;
+}
+
+function autoTab(tab) {
+  ['watch','webhook'].forEach(t => {
+    el(`auto-tab-${t}`)?.classList.toggle('active', t===tab);
+    const panel = el(`auto-panel-${t}`);
+    if (panel) panel.style.display = t===tab ? '' : 'none';
+  });
+}
+
 // ─── WATCH FOLDERS ────────────────────────────────────────────────────────
 async function loadWatches() {
   const folders = await api('/api/folders');
+  renderWatchList(folders);
+}
+function renderWatchList(folders) {
   el('watches-list').innerHTML = folders.length ? folders.map(wf=>`
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;gap:12px">
@@ -968,7 +1187,7 @@ function renderHist(jobs) {
     <td class="mono">${esc(basename(j.rar_file))}</td>
     <td>${bdg(j.status)}</td>
     <td>${j.status==='completed'?'100%':Math.round(j.progress)+'%'}</td>
-    <td>${j.source}</td>
+    <td>${srcBadge(j.source)}</td>
     <td>${ago(j.completed_at)}</td>
     <td style="display:flex;gap:4px">
       ${j.status==='failed'?`<button class="btn btn-secondary btn-sm" onclick="retryJob(${j.id},false)">Retry</button><button class="btn btn-warn btn-sm" onclick="retryJob(${j.id},true)">Force</button>`:''}
@@ -996,24 +1215,11 @@ async function clearLogs() { if(!confirm('Clear all logs?'))return; await api('/
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────
 async function loadSettings() {
-  const [s, whEnabled] = await Promise.all([
-    api('/api/settings'),
-    api('/api/webhooks/enabled'),
-  ]);
-  el('s-interval').value  = s.scan_interval_minutes;
+  const s = await api('/api/settings');
+  el('s-interval').value   = s.scan_interval_minutes;
   el('s-concurrent').value = s.max_concurrent_jobs;
-  el('s-post').value      = s.default_post_action;
-  el('s-trash').value     = s.trash_folder;
-
-  // Webhook master toggle
-  const enabled = whEnabled.enabled;
-  const sw = el('wh-master-sw');
-  sw.classList.toggle('on', enabled);
-  el('wh-master-lbl').textContent = enabled ? 'Enabled' : 'Disabled';
-  el('wh-disabled-notice').style.display = enabled ? 'none' : '';
-  el('wh-sources').style.display = enabled ? '' : 'none';
-
-  if (enabled) await loadWebhookSources();
+  el('s-post').value       = s.default_post_action;
+  el('s-trash').value      = s.trash_folder;
 }
 
 async function saveSettings() {
@@ -1039,11 +1245,7 @@ async function toggleWebhooks() {
   const sw = el('wh-master-sw');
   const nowEnabled = !sw.classList.contains('on');
   await api(`/api/webhooks/enabled?enabled=${nowEnabled}`, 'PUT');
-  sw.classList.toggle('on', nowEnabled);
-  el('wh-master-lbl').textContent = nowEnabled ? 'Enabled' : 'Disabled';
-  el('wh-disabled-notice').style.display = nowEnabled ? 'none' : '';
-  el('wh-sources').style.display = nowEnabled ? '' : 'none';
-  if (nowEnabled) await loadWebhookSources();
+  await loadAutomation();
 }
 
 async function loadWebhookSources() {
@@ -1105,7 +1307,7 @@ function webhookSourceCard(s) {
 
 async function toggleSource(source, currentEnabled) {
   await api(`/api/webhooks/sources/${source}?enabled=${!currentEnabled}`, 'PATCH');
-  await loadWebhookSources();
+  await loadAutomation();
 }
 
 async function saveSource(source) {
@@ -1125,7 +1327,7 @@ async function clearSource(source) {
   if (!confirm(`Clear all settings for ${SOURCE_META[source]?.label || source}?`)) return;
   await api(`/api/webhooks/sources/${source}/key`, 'DELETE');
   toast('Settings cleared', 'warn');
-  await loadWebhookSources();
+  await loadAutomation();
 }
 
 async function testSource(source) {

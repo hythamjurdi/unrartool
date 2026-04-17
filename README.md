@@ -1,6 +1,6 @@
 # UnrarTool
 
-A self-hosted Docker container for automatically extracting split RAR archives. Built for Unraid but works with any Docker-compatible host via `docker-compose`. Features a sleek web UI with a file browser, job queue, watch folders, scheduled scanning, real-time progress, and webhook integration with Sonarr, Radarr, Lidarr, and Readarr.
+A self-hosted Docker container for automatically extracting split RAR archives. Built for Unraid but works with any Docker-compatible host via `docker-compose`. Features a sleek web UI with a file browser, job queue, unified automation hub, real-time progress, and webhook integration with Sonarr, Radarr, Lidarr, and Readarr.
 
 ---
 
@@ -11,11 +11,14 @@ A self-hosted Docker container for automatically extracting split RAR archives. 
 - **Multi-Select** — Checkboxes on every folder; queue or mark multiple folders at once via a floating action bar
 - **Real-time Progress** — Smooth progress bar and ETA driven directly from `unrar`'s stdout output
 - **Job Queue** — Live status updates via WebSocket; cancel, retry, or force-retry any job
+- **Coloured Source Badges** — Every job in the queue, history, and dashboard shows a coloured pill badge indicating exactly how it was triggered: Manual (purple), Watcher (blue), Scheduler (grey), Sonarr (cyan), Radarr (gold), Lidarr (teal), Readarr (orange)
+- **Sources Hub** — Unified **Sources** page (renamed from Watch Folders) combining filesystem watch folder management and *arr webhook configuration, with live source status cards at the top
+- **Dashboard Sources Widget** — Card grid on the dashboard showing active/inactive status and last trigger time for every scanning source
 - **Watch Folders** — Filesystem event detection (watchdog) queues new RARs the instant they land
 - **Scheduler** — Periodic background scan of all watch folders (configurable interval)
 - **Smart Exclusions** — Auto-excluded after every successful extraction; manual "✓ Mark Done" button always visible in the file browser
 - **Force Re-extract** — Override any exclusion when you need to re-run
-- **Webhook Integration** — Optional direct integration with Sonarr, Radarr, Lidarr, and Readarr. UnrarTool connects to each app using its URL and API key, enabling instant extraction triggers and connection testing. Especially useful on SMB/NFS mounts where filesystem events are unreliable.
+- **Webhook Integration** — Optional direct integration with Sonarr, Radarr, Lidarr, and Readarr. Enter each app's URL and API key, test the connection, then point the app's webhook at UnrarTool. Especially useful on SMB/NFS mounts where filesystem events are unreliable.
 - **RAR5 + Split RAR** — Supports `.part01.rar` and legacy `.rar + .r00/.r01` formats
 - **Password Support** — Per-folder RAR passwords for encrypted archives
 - **Incomplete Archive Detection** — Skips and logs an error if parts are missing before attempting extraction
@@ -207,6 +210,13 @@ WebSocket at `ws://<host>/ws` — events: `new_job`, `job_update`, `job_progress
 ---
 
 ## Changelog
+
+### v1.3.0
+- **Sources page** — renamed nav item from "Watch Folders" to "Sources"; merged filesystem watch folder management and *arr webhook configuration into a single unified page with a tab bar (Watch Folders / *arr Webhooks)
+- **Source status cards** — live status cards at the top of the Sources page showing each scanning method's active state, folder count, last trigger time, and webhook hit count
+- **Dashboard scanning sources widget** — card grid added to the dashboard showing all active scanning sources with status and last triggered time at a glance
+- **Coloured source badges** — every job in the queue, history, and dashboard now shows a coloured pill badge identifying how it was triggered: Manual (purple), Watcher (blue), Scheduler (grey), Sonarr (cyan), Radarr (gold), Lidarr (teal), Readarr (orange). *arr sources use each app's actual brand colour.
+- **README** — fully updated with Sources page docs, badge reference, and changelog
 
 ### v1.2.1
 - **Fix: webhook source cards not rendering** — added SQLite migration on startup to add `app_url` and `arr_api_key` columns to existing `webhook_sources` tables. Upgrading users with a pre-existing database were hitting a silent column-missing error that prevented the sources list from loading.
