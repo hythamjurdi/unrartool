@@ -208,6 +208,10 @@ WebSocket at `ws://<host>/ws` — events: `new_job`, `job_update`, `job_progress
 
 ## Changelog
 
+### v1.2.1
+- **Fix: webhook source cards not rendering** — added SQLite migration on startup to add `app_url` and `arr_api_key` columns to existing `webhook_sources` tables. Upgrading users with a pre-existing database were hitting a silent column-missing error that prevented the sources list from loading.
+- **Fix: removed stale security description** from the webhook settings UI — the text referencing key generation was outdated after the UX change to paste-in keys
+
 ### v1.2.0
 - **Webhook Integration** — Sonarr, Radarr, Lidarr, and Readarr can notify UnrarTool the instant a download completes. Enter each app's URL and API key in Settings → Webhook Integration. UnrarTool tests connectivity and uses the same credentials for incoming webhook validation.
 - **Test Connection button** — per-source button calls the \*arr app's `/system/status` endpoint and reports the app name and version, or a clear error message
@@ -217,6 +221,7 @@ WebSocket at `ws://<host>/ws` — events: `new_job`, `job_update`, `job_progress
 - **Test event support** — clicking Test in \*arr apps returns 200 OK without triggering extraction
 - **Hit counter** — each source card shows total webhook hits received and the last received time
 - **httpx** added to dependencies for async outbound HTTP calls
+- README fully updated with webhook setup, default ports, and all current features
 
 ### v1.1.0
 - **File Browser: Filter & Sort** — search by name; filter by All / Folders / RAR Only / Files / Not Done; sort by name, modified date, size, or RAR count
