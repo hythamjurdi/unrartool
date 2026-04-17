@@ -12,7 +12,6 @@ Security measures:
 
 import hashlib
 import hmac
-import secrets
 import time
 from datetime import datetime
 from pathlib import Path
@@ -359,19 +358,26 @@ def update_source(source: str, enabled: bool, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@mgmt_router.post("/sources/{source}/generate-key")
-def generate_key(source: str, db: Session = Depends(get_db)):
+class SaveKeyRequest(BaseModel):
+    key: str
+
+
+@mgmt_router.post("/sources/{source}/save-key")
+def save_key(source: str, body: SaveKeyRequest, db: Session = Depends(get_db)):
     """
-    Generate a new API key for a source.
-    Returns the plaintext key ONCE — it is never stored and cannot be retrieved again.
+    Accept a user-supplied secret key, hash it, and store the hash.
+    The plaintext key is NEVER persisted — only the SHA256 hash is saved.
+    The user keeps their own copy of the key and configures it in their *arr app header.
     """
     if source not in SOURCES:
         raise HTTPException(400, f"Unknown source: {source}")
+    if len(body.key) < 8:
+        raise HTTPException(400, "Key must be at least 8 characters")
+
     _ensure_sources(db)
 
-    plaintext = secrets.token_urlsafe(32)          # 256 bits of entropy
-    key_hash  = _hash_key(plaintext)
-    suffix    = plaintext[-4:]                      # last 4 chars for display
+    key_hash = _hash_key(body.key)
+    suffix   = body.key[-4:]   # last 4 chars for masked display only
 
     src = db.query(WebhookSource).filter(WebhookSource.source == source).first()
     src.key_hash   = key_hash
@@ -379,15 +385,10 @@ def generate_key(source: str, db: Session = Depends(get_db)):
     src.enabled    = True
     db.commit()
 
-    _log(f"New API key generated for webhook source '{source}'")
+    # Log that a key was saved — never log the key value itself
+    _log(f"API key saved for webhook source '{source}'")
 
-    # Return plaintext key exactly once — UI must show it to the user immediately
-    return {
-        "ok":        True,
-        "source":    source,
-        "key":       plaintext,   # shown once, never stored
-        "key_suffix": suffix,
-    }
+    return {"ok": True, "source": source, "key_suffix": suffix}
 
 
 @mgmt_router.delete("/sources/{source}/key")

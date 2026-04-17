@@ -448,29 +448,6 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 </div>
 
 <!-- Key reveal modal — shown once after generation -->
-<div class="overlay" id="m-key-reveal">
-  <div class="modal">
-    <div class="modal-title">🔑 Your API Key — Save This Now</div>
-    <div class="alert alert-warn" style="margin-bottom:14px">
-      This key will <strong>never be shown again</strong>. Copy it now and paste it into your *arr app.
-    </div>
-    <div style="background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:12px 14px;font-family:var(--mono);font-size:13px;word-break:break-all;margin-bottom:14px;position:relative" id="key-reveal-box"></div>
-    <div class="fg">
-      <label class="fl" id="key-reveal-url-label">Webhook URL</label>
-      <div style="background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-family:var(--mono);font-size:12.5px;word-break:break-all" id="key-reveal-url"></div>
-      <div class="fh">Paste this URL into your app under Settings → Connect → Webhook → URL</div>
-    </div>
-    <div class="fg">
-      <label class="fl">Header to set in your app</label>
-      <div style="background:var(--surface3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 14px;font-family:var(--mono);font-size:12.5px">X-Api-Key: <span id="key-reveal-preview"></span></div>
-      <div class="fh">In Sonarr/Radarr: Settings → Connect → Webhook → Headers → add X-Api-Key with the key above</div>
-    </div>
-    <div class="modal-acts">
-      <button class="btn btn-secondary" onclick="copyKey()">Copy Key</button>
-      <button class="btn btn-primary" onclick="closeM('m-key-reveal')">Done — I've saved it</button>
-    </div>
-  </div>
-</div>
 
 <div class="overlay" id="m-add-watch">
   <div class="modal">
@@ -1080,12 +1057,11 @@ async function loadWebhookSources() {
 }
 
 function webhookSourceCard(s) {
-  const meta = SOURCE_META[s.source] || { label: s.source, color: '#888', desc: '' };
-  const baseUrl = `${location.protocol}//${location.host}`;
-  const url = `${baseUrl}/api/webhook/${s.source}`;
+  const meta    = SOURCE_META[s.source] || { label: s.source, color: '#888', desc: '' };
+  const urlPath = `/api/webhook/${s.source}`;
 
   return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <div style="width:10px;height:10px;border-radius:50%;background:${meta.color};flex-shrink:0"></div>
       <div style="flex:1">
         <div style="font-size:14px;font-weight:600">${meta.label}</div>
@@ -1098,30 +1074,40 @@ function webhookSourceCard(s) {
       </label>
     </div>
 
-    ${s.has_key ? `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;background:var(--surface2);border-radius:var(--radius-sm);padding:8px 12px">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-      <span style="font-size:12px;color:var(--ok);font-weight:600">Key configured</span>
-      <span style="font-family:var(--mono);font-size:12px;color:var(--text3)">••••••••${esc(s.key_suffix || '????')}</span>
-      <div style="flex:1"></div>
-      <button class="btn btn-danger btn-sm" onclick="revokeKey('${s.source}')">Revoke</button>
-      <button class="btn btn-warn btn-sm" onclick="generateKey('${s.source}')">Regenerate</button>
-    </div>` : `
-    <div style="margin-bottom:10px">
-      <button class="btn btn-primary btn-sm" onclick="generateKey('${s.source}')">Generate API Key</button>
-      <span style="font-size:12px;color:var(--text3);margin-left:8px">No key — source inactive until a key is generated</span>
-    </div>`}
-
-    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:8px 12px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px">Webhook URL</div>
-      <div style="font-family:var(--mono);font-size:12px;color:var(--text);word-break:break-all">${url}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px">
-        In ${meta.label}: Settings → Connect → Webhook → URL = above | Header: <code>X-Api-Key</code> = your key
+    <!-- API key input — user pastes their chosen secret here -->
+    <div class="fg" style="margin-bottom:10px">
+      <label class="fl">Shared Secret Key</label>
+      <div style="display:flex;gap:8px">
+        <input type="password" class="fi" id="wh-key-${s.source}"
+          placeholder="${s.has_key ? '••••••••' + esc(s.key_suffix || '????') + '  (key saved — paste new to replace)' : 'Paste your chosen secret key here…'}"
+          style="font-family:var(--mono);flex:1">
+        <button class="btn btn-primary btn-sm" onclick="saveKey('${s.source}')">Save Key</button>
+        ${s.has_key ? `<button class="btn btn-danger btn-sm" onclick="revokeKey('${s.source}')">Clear</button>` : ''}
+      </div>
+      <div class="fh">
+        Choose any secret string — paste the same value into your ${meta.label} webhook header as <code style="background:var(--surface3);padding:1px 4px;border-radius:3px">X-Api-Key</code>.
+        ${s.has_key ? `<span style="color:var(--ok)">✓ Key saved (SHA256 hashed, never stored plaintext)</span>` : ''}
       </div>
     </div>
-    ${s.hit_count > 0 ? `<div style="font-size:12px;color:var(--text3);margin-top:8px">
-      ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} · Last: ${ago(s.last_hit)}
-    </div>` : ''}
+
+    <!-- Webhook URL — clear placeholder, no hardcoded IP -->
+    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">
+        Setup instructions for ${meta.label}
+      </div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.8">
+        1. In ${meta.label}: <strong>Settings → Connect → + → Webhook</strong><br>
+        2. <strong>URL:</strong> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:12px">http://YOUR_UNRAID_IP:8080${urlPath}</code><br>
+        3. <strong>Method:</strong> POST &nbsp;|&nbsp; <strong>Triggers:</strong> ✅ On Download<br>
+        4. <strong>Headers:</strong> Add <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:12px">X-Api-Key</code> = the key you saved above<br>
+        5. Click <strong>Test</strong> — UnrarTool will log a successful test event
+      </div>
+    </div>
+
+    ${s.hit_count > 0 ? `<div style="font-size:12px;color:var(--text3);margin-top:8px;display:flex;gap:12px">
+      <span>✓ ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} received</span>
+      <span>Last: ${ago(s.last_hit)}</span>
+    </div>` : `<div style="font-size:12px;color:var(--text3);margin-top:8px">No webhook hits yet — click Test in ${meta.label} after setup to verify</div>`}
   </div>`;
 }
 
@@ -1130,35 +1116,23 @@ async function toggleSource(source, currentEnabled) {
   await loadWebhookSources();
 }
 
-let _revealedKey = '';
+async function saveKey(source) {
+  const input = el(`wh-key-${source}`);
+  const key   = input?.value?.trim();
+  if (!key) { toast('Please paste a key before saving', 'warn'); return; }
+  if (key.length < 8) { toast('Key must be at least 8 characters', 'warn'); return; }
 
-async function generateKey(source) {
-  if (source && !confirm(`Generate a new API key for ${SOURCE_META[source]?.label || source}? Any existing key will be invalidated.`)) return;
-  const r = await api(`/api/webhooks/sources/${source}/generate-key`, 'POST');
-  _revealedKey = r.key;
-
-  // Show key reveal modal
-  el('key-reveal-box').textContent = r.key;
-  el('key-reveal-preview').textContent = r.key;
-  el('key-reveal-url-label').textContent = `Webhook URL for ${SOURCE_META[source]?.label || source}`;
-  el('key-reveal-url').textContent = `${location.protocol}//${location.host}/api/webhook/${source}`;
-  openM('m-key-reveal');
-
+  await api(`/api/webhooks/sources/${source}/save-key`, 'POST', { key });
+  input.value = '';
+  toast(`${SOURCE_META[source]?.label || source} key saved securely`, 'ok');
   await loadWebhookSources();
 }
 
 async function revokeKey(source) {
-  if (!confirm(`Revoke the API key for ${SOURCE_META[source]?.label || source}? The source will stop receiving webhooks immediately.`)) return;
+  if (!confirm(`Clear the API key for ${SOURCE_META[source]?.label || source}? Webhooks from this source will stop being authenticated.`)) return;
   await api(`/api/webhooks/sources/${source}/key`, 'DELETE');
-  toast('Key revoked — source disabled', 'warn');
+  toast('Key cleared', 'warn');
   await loadWebhookSources();
-}
-
-function copyKey() {
-  if (!_revealedKey) return;
-  navigator.clipboard.writeText(_revealedKey)
-    .then(() => toast('Key copied to clipboard', 'ok'))
-    .catch(() => toast('Copy failed — select the key manually', 'warn'));
 }
 
 // ─── THEME ────────────────────────────────────────────────────────────────

@@ -213,12 +213,14 @@ unrartool/
 ## Changelog
 
 ### v1.2.0
-- **Webhook Integration** — Sonarr, Radarr, Lidarr, and Readarr can now notify UnrarTool the instant a download completes, triggering extraction immediately without any filesystem polling delay. Especially useful on SMB/NFS mounts where filesystem events are unreliable.
-- **Security** — Per-source API keys (one per *arr app). Keys are generated with 256-bit entropy, stored as SHA256 hashes (never plaintext), transmitted via `X-Api-Key` header only (never in URLs), shown exactly once in the UI, and never written to logs. IP-based rate limiting blocks sources after 5 failed attempts for 5 minutes. Constant-time key comparison prevents timing attacks.
-- **Optional toggle** — Webhooks are disabled by default. Enable in Settings → Webhook Integration. Each source (Sonarr/Radarr/Lidarr/Readarr) has its own enable toggle and key.
-- **Webhook logs** — every hit (accepted and rejected) is recorded in the log viewer with source, IP, and event type
-- **Test event support** — clicking "Test" in Sonarr/Radarr returns a success response without triggering extraction
-- **Exclusions respected** — webhook-triggered folders are still skipped if marked as done
+- **Webhook Integration** — Sonarr, Radarr, Lidarr, and Readarr can now notify UnrarTool the instant a download completes, triggering extraction immediately. Especially useful on SMB/NFS mounts where filesystem events are unreliable.
+- **Paste-in API keys** — each *arr source has a password input field in Settings. Paste any secret string you choose, save it, then add the same string as an `X-Api-Key` header in your *arr app's webhook config. Keys are SHA256-hashed before storage — the plaintext is never persisted.
+- **Clear setup instructions** — each source card shows step-by-step instructions with `http://YOUR_UNRAID_IP:8080/api/webhook/{source}` as the URL template (no hardcoded IP)
+- **Security** — IP-based rate limiting (5 failures → 5 min block), constant-time key comparison, keys never logged, all auth failures return identical 401
+- **Optional toggle** — disabled by default. Enable in Settings → Webhook Integration
+- **Per-source enable/disable** — toggle each source independently once a key is saved
+- **Test event support** — clicking Test in Sonarr/Radarr returns 200 OK without triggering extraction
+- **Webhook hit counter** — each source card shows total hits and last received time
 
 ### v1.1.0
 - **File Browser: Filter & Sort** — filter by name (search), type (All / Folders / RAR Only / Files / Not Done), sort by name, modified date, size, or RAR count
