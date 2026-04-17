@@ -1,12 +1,19 @@
 """
 webhooks.py — Incoming webhook receivers for *arr applications.
 
+Flow:
+  1. User enters their *arr app URL + API key in UnrarTool settings
+  2. UnrarTool uses those to test connectivity (GET /api/v3/system/status)
+  3. The same API key is used as the webhook shared secret:
+       - In the *arr app, user adds header X-Api-Key = their API key
+       - UnrarTool validates incoming webhooks against SHA256(api_key)
+  4. On a valid Download event, UnrarTool scans the payload folder and queues extraction
+
 Security measures:
-  - API key transmitted via X-Api-Key header ONLY (never URL/query params)
-  - Keys stored as SHA256 hashes — plaintext is never persisted
-  - Constant-time comparison via hmac.compare_digest (timing-attack safe)
-  - IP-based rate limiting: 5 failures → 5-minute block per IP
-  - All auth failures return identical 401 (no information leakage)
+  - API key stored plaintext for outbound calls, but also hashed for fast webhook validation
+  - Webhook auth uses constant-time comparison (hmac.compare_digest) — timing-attack safe
+  - IP-based rate limiting: 5 failures per IP → 5-minute block
+  - Auth failures always return identical 401 — no information leakage
   - Key value is NEVER written to logs
 """
 
@@ -17,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -25,28 +33,34 @@ from ..database import get_db, new_session
 from ..models import AppSetting, LogEntry, WebhookSource
 from ..services.queue_manager import queue_manager
 
-router = APIRouter(prefix="/api/webhook", tags=["webhooks"])
+router      = APIRouter(prefix="/api/webhook",  tags=["webhooks"])
 mgmt_router = APIRouter(prefix="/api/webhooks", tags=["webhook-management"])
 
+# Default ports for each *arr app
+SOURCE_DEFAULTS = {
+    "sonarr":  {"port": 8989, "label": "Sonarr",  "api_path": "/api/v3/system/status"},
+    "radarr":  {"port": 7878, "label": "Radarr",  "api_path": "/api/v3/system/status"},
+    "lidarr":  {"port": 8686, "label": "Lidarr",  "api_path": "/api/v1/system/status"},
+    "readarr": {"port": 8787, "label": "Readarr", "api_path": "/api/v1/system/status"},
+}
+SOURCES = list(SOURCE_DEFAULTS.keys())
+
 # ---------------------------------------------------------------------------
-# In-memory rate limiter (IP → {failures, blocked_until})
+# Rate limiter
 # ---------------------------------------------------------------------------
 
 _rate_limit: dict[str, dict] = {}
 _MAX_FAILURES  = 5
-_BLOCK_SECONDS = 300   # 5 minutes
+_BLOCK_SECONDS = 300
 
 
 def _check_rate_limit(ip: str) -> None:
-    """Raises 429 if the IP is currently blocked."""
     entry = _rate_limit.get(ip)
     if not entry:
         return
     if entry.get("blocked_until", 0) > time.monotonic():
         raise HTTPException(429, "Too many failed attempts. Try again later.")
-    # Block expired — clean up
-    if entry.get("blocked_until", 0) <= time.monotonic():
-        _rate_limit.pop(ip, None)
+    _rate_limit.pop(ip, None)
 
 
 def _record_failure(ip: str) -> None:
@@ -54,7 +68,7 @@ def _record_failure(ip: str) -> None:
     entry["failures"] += 1
     if entry["failures"] >= _MAX_FAILURES:
         entry["blocked_until"] = time.monotonic() + _BLOCK_SECONDS
-        _log(f"Webhook rate limit triggered for IP {ip} — blocked for 5 minutes", "WARNING")
+        _log(f"Webhook rate limit triggered for IP {ip} — blocked 5 min", "WARNING")
 
 
 def _record_success(ip: str) -> None:
@@ -65,14 +79,14 @@ def _record_success(ip: str) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _log(message: str, level: str = "INFO", job_id: int | None = None) -> None:
+def _log(msg: str, level: str = "INFO", job_id: int | None = None) -> None:
     db = new_session()
     try:
-        db.add(LogEntry(level=level, message=message, job_id=job_id))
+        db.add(LogEntry(level=level, message=msg, job_id=job_id))
         db.commit()
     finally:
         db.close()
-    print(f"[{level}] {message}")
+    print(f"[{level}] {msg}")
 
 
 def _hash_key(key: str) -> str:
@@ -84,15 +98,14 @@ def _webhooks_enabled(db: Session) -> bool:
     return row is not None and row.value == "true"
 
 
-def _get_source(db: Session, source: str) -> WebhookSource | None:
-    return db.query(WebhookSource).filter(WebhookSource.source == source).first()
+def _ensure_sources(db: Session) -> None:
+    for src in SOURCES:
+        if not db.query(WebhookSource).filter(WebhookSource.source == src).first():
+            db.add(WebhookSource(source=src, enabled=False))
+    db.commit()
 
 
 def _verify_key(db: Session, source: str, provided_key: str | None, ip: str) -> WebhookSource:
-    """
-    Authenticate the request. Raises HTTPException on any failure.
-    The error message is intentionally generic to avoid leaking information.
-    """
     _check_rate_limit(ip)
 
     if not _webhooks_enabled(db):
@@ -102,16 +115,15 @@ def _verify_key(db: Session, source: str, provided_key: str | None, ip: str) -> 
         _record_failure(ip)
         raise HTTPException(401, "Unauthorized.")
 
-    src = _get_source(db, source)
+    src = db.query(WebhookSource).filter(WebhookSource.source == source).first()
     if not src or not src.enabled or not src.key_hash:
         _record_failure(ip)
         raise HTTPException(401, "Unauthorized.")
 
-    # Constant-time comparison — prevents timing attacks
     provided_hash = _hash_key(provided_key)
     if not hmac.compare_digest(src.key_hash, provided_hash):
         _record_failure(ip)
-        _log(f"Webhook auth failure for source '{source}' from {ip}", "WARNING")
+        _log(f"Webhook auth failure for '{source}' from {ip}", "WARNING")
         raise HTTPException(401, "Unauthorized.")
 
     _record_success(ip)
@@ -124,34 +136,30 @@ def _update_hit(db: Session, src: WebhookSource) -> None:
     db.commit()
 
 
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 # ---------------------------------------------------------------------------
-# Payload parsers — extract the relevant folder path from each *arr payload
+# Payload parsers
 # ---------------------------------------------------------------------------
 
 def _parse_sonarr(payload: dict) -> str | None:
-    """
-    Sonarr sends episodeFile.path (full file path).
-    We want the parent directory.
-    Also handles series.path as fallback.
-    """
-    # Prefer the most specific path first
-    ep = payload.get("episodeFile", {})
-    path = ep.get("path") or ep.get("relativePath")
+    ep   = payload.get("episodeFile", {})
+    path = ep.get("path")
     if path:
-        p = Path(path)
-        return str(p.parent) if p.suffix else path
-
-    # Fallback: series root
-    series = payload.get("series", {})
-    return series.get("path")
+        return str(Path(path).parent)
+    return payload.get("series", {}).get("path")
 
 
 def _parse_radarr(payload: dict) -> str | None:
-    mf = payload.get("movieFile", {})
+    mf   = payload.get("movieFile", {})
     path = mf.get("path")
     if path:
         return str(Path(path).parent)
-
     movie = payload.get("movie", {})
     return movie.get("folderPath") or movie.get("path")
 
@@ -160,16 +168,14 @@ def _parse_lidarr(payload: dict) -> str | None:
     tracks = payload.get("trackFiles", [])
     if tracks and tracks[0].get("path"):
         return str(Path(tracks[0]["path"]).parent)
-    artist = payload.get("artist", {})
-    return artist.get("path")
+    return payload.get("artist", {}).get("path")
 
 
 def _parse_readarr(payload: dict) -> str | None:
     books = payload.get("bookFiles", [])
     if books and books[0].get("path"):
         return str(Path(books[0]["path"]).parent)
-    author = payload.get("author", {})
-    return author.get("path")
+    return payload.get("author", {}).get("path")
 
 
 PARSERS = {
@@ -181,163 +187,104 @@ PARSERS = {
 
 
 # ---------------------------------------------------------------------------
-# Generic webhook handler
+# Generic handler
 # ---------------------------------------------------------------------------
 
-async def _handle_webhook(
-    source: str,
-    payload: dict,
-    api_key: str | None,
-    ip: str,
-) -> dict:
+async def _handle_webhook(source: str, payload: dict, api_key: str | None, ip: str) -> dict:
     db = new_session()
     try:
-        src = _verify_key(db, source, api_key, ip)
-
+        src        = _verify_key(db, source, api_key, ip)
         event_type = payload.get("eventType", "unknown")
-        _log(f"Webhook received from {source} [{event_type}] (IP: {ip})")
 
-        # Test event — *arr apps send this when you click "Test" in their UI
+        _log(f"Webhook received — source: {source}, event: {event_type}, IP: {ip}")
+
         if event_type == "Test":
             _update_hit(db, src)
-            _log(f"Webhook test from {source} — connection OK")
+            _log(f"Webhook test from {source} — connection verified OK")
             return {"status": "ok", "message": "Test received successfully"}
 
-        # Only process Download events
         if event_type != "Download":
-            _log(f"Webhook from {source}: ignoring event type '{event_type}'")
+            _log(f"Webhook from {source}: ignoring event '{event_type}'")
             return {"status": "ignored", "event_type": event_type}
 
-        # Extract folder path from payload
-        parser = PARSERS.get(source)
-        folder_path = parser(payload) if parser else None
+        folder_path = PARSERS.get(source, lambda _: None)(payload)
 
         if not folder_path:
-            _log(
-                f"Webhook from {source}: could not extract folder path from payload",
-                "WARNING",
-            )
+            _log(f"Webhook from {source}: could not extract folder path", "WARNING")
             return {"status": "error", "message": "Could not determine folder path from payload"}
 
         if not Path(folder_path).exists():
-            _log(
-                f"Webhook from {source}: path does not exist on disk: {folder_path}",
-                "WARNING",
-            )
+            _log(f"Webhook from {source}: path not found on disk: {folder_path}", "WARNING")
             return {"status": "error", "message": "Path not found on disk"}
 
         _update_hit(db, src)
     finally:
         db.close()
 
-    # Enqueue — exclusions are respected (force=False), per user preference
-    result = await queue_manager.enqueue_folder(
-        folder_path=folder_path,
-        source=f"webhook_{source}",
-    )
-
+    result  = await queue_manager.enqueue_folder(folder_path=folder_path, source=f"webhook_{source}")
     queued  = len(result["queued"])
     skipped = len(result["skipped"])
 
-    _log(
-        f"Webhook {source}: scanned '{folder_path}' → "
-        f"{queued} queued, {skipped} skipped (excluded)"
-    )
+    _log(f"Webhook {source}: '{folder_path}' → {queued} queued, {skipped} skipped (excluded)")
 
     return {
-        "status": "ok",
-        "folder": folder_path,
-        "queued": queued,
+        "status":  "ok",
+        "folder":  folder_path,
+        "queued":  queued,
         "skipped": skipped,
         "job_ids": result["queued"],
     }
 
 
 # ---------------------------------------------------------------------------
-# Webhook endpoints (one per source)
+# Webhook endpoints
 # ---------------------------------------------------------------------------
 
-class WebhookPayload(BaseModel):
-    model_config = {"extra": "allow"}
-
-
-def _client_ip(request: Request) -> str:
-    # Honour X-Forwarded-For if behind a reverse proxy
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 @router.post("/sonarr")
-async def webhook_sonarr(
-    request: Request,
-    payload: dict,
-    x_api_key: str | None = Header(default=None),
-):
+async def webhook_sonarr(request: Request, payload: dict,
+                          x_api_key: str | None = Header(default=None)):
     return await _handle_webhook("sonarr", payload, x_api_key, _client_ip(request))
 
 
 @router.post("/radarr")
-async def webhook_radarr(
-    request: Request,
-    payload: dict,
-    x_api_key: str | None = Header(default=None),
-):
+async def webhook_radarr(request: Request, payload: dict,
+                          x_api_key: str | None = Header(default=None)):
     return await _handle_webhook("radarr", payload, x_api_key, _client_ip(request))
 
 
 @router.post("/lidarr")
-async def webhook_lidarr(
-    request: Request,
-    payload: dict,
-    x_api_key: str | None = Header(default=None),
-):
+async def webhook_lidarr(request: Request, payload: dict,
+                          x_api_key: str | None = Header(default=None)):
     return await _handle_webhook("lidarr", payload, x_api_key, _client_ip(request))
 
 
 @router.post("/readarr")
-async def webhook_readarr(
-    request: Request,
-    payload: dict,
-    x_api_key: str | None = Header(default=None),
-):
+async def webhook_readarr(request: Request, payload: dict,
+                           x_api_key: str | None = Header(default=None)):
     return await _handle_webhook("readarr", payload, x_api_key, _client_ip(request))
 
 
 # ---------------------------------------------------------------------------
-# Management endpoints (called by the Settings UI)
+# Management endpoints
 # ---------------------------------------------------------------------------
 
-SOURCES = ["sonarr", "radarr", "lidarr", "readarr"]
-
-
 class SourceStatus(BaseModel):
-    source:      str
-    enabled:     bool
-    has_key:     bool
-    key_suffix:  str | None   # last 4 chars only — never the full key
-    hit_count:   int
-    last_hit:    str | None
+    source:     str
+    enabled:    bool
+    app_url:    str | None
+    has_key:    bool
+    key_suffix: str | None
+    hit_count:  int
+    last_hit:   str | None
 
 
 def _source_status(s: WebhookSource) -> SourceStatus:
     return SourceStatus(
-        source=s.source,
-        enabled=s.enabled,
-        has_key=bool(s.key_hash),
-        key_suffix=s.key_suffix,
-        hit_count=s.hit_count or 0,
+        source=s.source, enabled=s.enabled,
+        app_url=s.app_url, has_key=bool(s.key_hash),
+        key_suffix=s.key_suffix, hit_count=s.hit_count or 0,
         last_hit=s.last_hit.isoformat() if s.last_hit else None,
     )
-
-
-def _ensure_sources(db: Session) -> None:
-    """Create default rows for all sources if they don't exist."""
-    for src in SOURCES:
-        if not db.query(WebhookSource).filter(WebhookSource.source == src).first():
-            db.add(WebhookSource(source=src, enabled=False))
-    db.commit()
 
 
 @mgmt_router.get("/sources", response_model=list[SourceStatus])
@@ -359,51 +306,90 @@ def update_source(source: str, enabled: bool, db: Session = Depends(get_db)):
 
 
 class SaveKeyRequest(BaseModel):
-    key: str
+    app_url: str
+    api_key: str
 
 
 @mgmt_router.post("/sources/{source}/save-key")
 def save_key(source: str, body: SaveKeyRequest, db: Session = Depends(get_db)):
     """
-    Accept a user-supplied secret key, hash it, and store the hash.
-    The plaintext key is NEVER persisted — only the SHA256 hash is saved.
-    The user keeps their own copy of the key and configures it in their *arr app header.
+    Save the *arr app's URL and API key.
+    - app_url and api_key stored plaintext so UnrarTool can call their API (test connection)
+    - key_hash = SHA256(api_key) used for fast webhook validation
+    - key_suffix = last 4 chars for masked display only
     """
     if source not in SOURCES:
         raise HTTPException(400, f"Unknown source: {source}")
-    if len(body.key) < 8:
-        raise HTTPException(400, "Key must be at least 8 characters")
+    if not body.app_url.startswith("http"):
+        raise HTTPException(400, "App URL must start with http:// or https://")
+    if len(body.api_key) < 8:
+        raise HTTPException(400, "API key must be at least 8 characters")
 
     _ensure_sources(db)
-
-    key_hash = _hash_key(body.key)
-    suffix   = body.key[-4:]   # last 4 chars for masked display only
-
     src = db.query(WebhookSource).filter(WebhookSource.source == source).first()
-    src.key_hash   = key_hash
-    src.key_suffix = suffix
-    src.enabled    = True
+    src.app_url     = body.app_url.rstrip("/")
+    src.arr_api_key = body.api_key
+    src.key_hash    = _hash_key(body.api_key)
+    src.key_suffix  = body.api_key[-4:]
+    src.enabled     = True
     db.commit()
 
-    # Log that a key was saved — never log the key value itself
-    _log(f"API key saved for webhook source '{source}'")
-
-    return {"ok": True, "source": source, "key_suffix": suffix}
+    # Never log the key value
+    _log(f"Connection settings saved for webhook source '{source}' ({body.app_url})")
+    return {"ok": True, "source": source, "key_suffix": src.key_suffix}
 
 
 @mgmt_router.delete("/sources/{source}/key")
 def revoke_key(source: str, db: Session = Depends(get_db)):
-    """Revoke (delete) the API key for a source. Source is disabled automatically."""
-    if source not in SOURCES:
-        raise HTTPException(400, f"Unknown source: {source}")
     src = db.query(WebhookSource).filter(WebhookSource.source == source).first()
     if src:
-        src.key_hash  = None
-        src.key_suffix = None
-        src.enabled   = False
+        src.app_url = src.arr_api_key = src.key_hash = src.key_suffix = None
+        src.enabled = False
         db.commit()
-    _log(f"API key revoked for webhook source '{source}'")
+    _log(f"Connection settings cleared for webhook source '{source}'")
     return {"ok": True}
+
+
+@mgmt_router.get("/sources/{source}/test")
+async def test_source(source: str, db: Session = Depends(get_db)):
+    """
+    Test connectivity to the *arr app by calling its /system/status endpoint.
+    Uses the stored app_url and arr_api_key — no credentials needed in the request.
+    """
+    if source not in SOURCES:
+        raise HTTPException(400, f"Unknown source: {source}")
+
+    src = db.query(WebhookSource).filter(WebhookSource.source == source).first()
+    if not src or not src.app_url or not src.arr_api_key:
+        raise HTTPException(400, "App URL and API key not configured yet")
+
+    api_path = SOURCE_DEFAULTS[source]["api_path"]
+    url      = f"{src.app_url}{api_path}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers={"X-Api-Key": src.arr_api_key})
+
+        if resp.status_code == 200:
+            data     = resp.json()
+            version  = data.get("version", "unknown")
+            app_name = data.get("appName") or SOURCE_DEFAULTS[source]["label"]
+            _log(f"Webhook test connection OK — {source} v{version} at {src.app_url}")
+            return {"ok": True, "version": version, "appName": app_name}
+
+        elif resp.status_code == 401:
+            return {"ok": False, "error": "Invalid API key — check the key in your app under Settings → General → Security"}
+        elif resp.status_code == 404:
+            return {"ok": False, "error": f"Endpoint not found — check the URL is correct ({src.app_url})"}
+        else:
+            return {"ok": False, "error": f"Unexpected response: HTTP {resp.status_code}"}
+
+    except httpx.ConnectError:
+        return {"ok": False, "error": f"Connection refused — is {source.capitalize()} running at {src.app_url}?"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": f"Timeout — {src.app_url} did not respond within 10 seconds"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @mgmt_router.get("/enabled")

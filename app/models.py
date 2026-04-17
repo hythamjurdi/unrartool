@@ -50,19 +50,22 @@ class LogEntry(Base):
 class WebhookSource(Base):
     """
     Stores per-source webhook configuration.
-    The API key is NEVER stored plaintext — only its SHA256 hash.
-    key_suffix stores the last 4 chars of the original key for UI display only.
+    app_url and arr_api_key are stored plaintext (needed for outbound test calls).
+    key_hash is SHA256(arr_api_key) used for fast constant-time webhook validation.
+    key_suffix stores the last 4 chars for masked UI display only.
     """
     __tablename__ = "webhook_sources"
 
-    id          = Column(Integer, primary_key=True, index=True)
-    source      = Column(String, unique=True, nullable=False)  # sonarr|radarr|lidarr|readarr
-    enabled     = Column(Boolean, default=False)
-    key_hash    = Column(String, nullable=True)   # SHA256 hex digest
-    key_suffix  = Column(String, nullable=True)   # last 4 chars of plaintext key (display only)
-    hit_count   = Column(Integer, default=0)
-    last_hit    = Column(DateTime, nullable=True)
-    created_at  = Column(DateTime, default=datetime.utcnow)
+    id           = Column(Integer, primary_key=True, index=True)
+    source       = Column(String, unique=True, nullable=False)  # sonarr|radarr|lidarr|readarr
+    enabled      = Column(Boolean, default=False)
+    app_url      = Column(String, nullable=True)   # e.g. http://192.168.1.100:8989
+    arr_api_key  = Column(String, nullable=True)   # plaintext — needed to call their API
+    key_hash     = Column(String, nullable=True)   # SHA256 for webhook validation
+    key_suffix   = Column(String, nullable=True)   # last 4 chars for display only
+    hit_count    = Column(Integer, default=0)
+    last_hit     = Column(DateTime, nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow)
 
 
 class Exclusion(Base):

@@ -1032,10 +1032,10 @@ async function saveSettings() {
 // ─── WEBHOOK SETTINGS ─────────────────────────────────────────────────────
 
 const SOURCE_META = {
-  sonarr:  { label: 'Sonarr',  color: '#00CCFF', desc: 'TV series downloader' },
-  radarr:  { label: 'Radarr',  color: '#FFC230', desc: 'Movie downloader' },
-  lidarr:  { label: 'Lidarr',  color: '#00E5FF', desc: 'Music downloader' },
-  readarr: { label: 'Readarr', color: '#FF7F50', desc: 'Books downloader' },
+  sonarr:  { label: 'Sonarr',  color: '#00CCFF', desc: 'TV series',  port: 8989 },
+  radarr:  { label: 'Radarr',  color: '#FFC230', desc: 'Movies',     port: 7878 },
+  lidarr:  { label: 'Lidarr',  color: '#00E5FF', desc: 'Music',      port: 8686 },
+  readarr: { label: 'Readarr', color: '#FF7F50', desc: 'Books',      port: 8787 },
 };
 
 async function toggleWebhooks() {
@@ -1057,57 +1057,52 @@ async function loadWebhookSources() {
 }
 
 function webhookSourceCard(s) {
-  const meta    = SOURCE_META[s.source] || { label: s.source, color: '#888', desc: '' };
-  const urlPath = `/api/webhook/${s.source}`;
+  const meta = SOURCE_META[s.source] || { label: s.source, color: '#888', desc: '', port: 80 };
+  const hasConfig = s.has_key && s.app_url;
+  const statusColor = s.enabled && hasConfig ? 'var(--ok)' : 'var(--text3)';
+  const statusText  = s.enabled && hasConfig ? 'Active' : hasConfig ? 'Inactive' : 'Not configured';
 
   return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <div style="width:10px;height:10px;border-radius:50%;background:${meta.color};flex-shrink:0"></div>
       <div style="flex:1">
-        <div style="font-size:14px;font-weight:600">${meta.label}</div>
-        <div style="font-size:12px;color:var(--text2)">${meta.desc}</div>
+        <div style="font-size:14px;font-weight:600">${meta.label} <span style="font-size:11px;font-weight:400;color:var(--text3)">${meta.desc}</span></div>
+        <div style="font-size:12px;color:${statusColor}">${statusText}</div>
       </div>
-      <label class="sw">
-        <div class="sw-track ${s.enabled ? 'on' : ''}" id="wh-sw-${s.source}"
-          onclick="toggleSource('${s.source}',${s.enabled})"><div class="sw-thumb"></div></div>
-        <span style="font-size:12px;color:var(--text2)">${s.enabled ? 'Active' : 'Inactive'}</span>
-      </label>
+      ${hasConfig ? `<button class="btn btn-secondary btn-sm" id="test-btn-${s.source}" onclick="testSource('${s.source}')">Test Connection</button>` : ''}
+      ${s.enabled
+        ? `<button class="btn btn-ok btn-sm" onclick="toggleSource('${s.source}',true)">Enabled</button>`
+        : `<button class="btn btn-secondary btn-sm" onclick="toggleSource('${s.source}',false)">Disabled</button>`}
     </div>
-
-    <!-- API key input — user pastes their chosen secret here -->
+    <div id="test-result-${s.source}" style="display:none;margin-bottom:12px"></div>
     <div class="fg" style="margin-bottom:10px">
-      <label class="fl">Shared Secret Key</label>
-      <div style="display:flex;gap:8px">
-        <input type="password" class="fi" id="wh-key-${s.source}"
-          placeholder="${s.has_key ? '••••••••' + esc(s.key_suffix || '????') + '  (key saved — paste new to replace)' : 'Paste your chosen secret key here…'}"
-          style="font-family:var(--mono);flex:1">
-        <button class="btn btn-primary btn-sm" onclick="saveKey('${s.source}')">Save Key</button>
-        ${s.has_key ? `<button class="btn btn-danger btn-sm" onclick="revokeKey('${s.source}')">Clear</button>` : ''}
-      </div>
-      <div class="fh">
-        Choose any secret string — paste the same value into your ${meta.label} webhook header as <code style="background:var(--surface3);padding:1px 4px;border-radius:3px">X-Api-Key</code>.
-        ${s.has_key ? `<span style="color:var(--ok)">✓ Key saved (SHA256 hashed, never stored plaintext)</span>` : ''}
-      </div>
+      <label class="fl">${meta.label} URL</label>
+      <input type="text" class="fi" id="wh-url-${s.source}" value="${s.app_url ? esc(s.app_url) : ''}" placeholder="http://192.168.1.100:${meta.port}">
+      <div class="fh">Address you use to access ${meta.label}. Default port is <strong>${meta.port}</strong>.</div>
     </div>
-
-    <!-- Webhook URL — clear placeholder, no hardcoded IP -->
-    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:10px 14px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">
-        Setup instructions for ${meta.label}
-      </div>
-      <div style="font-size:12px;color:var(--text2);line-height:1.8">
-        1. In ${meta.label}: <strong>Settings → Connect → + → Webhook</strong><br>
-        2. <strong>URL:</strong> <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:12px">http://YOUR_UNRAID_IP:8080${urlPath}</code><br>
-        3. <strong>Method:</strong> POST &nbsp;|&nbsp; <strong>Triggers:</strong> ✅ On Download<br>
-        4. <strong>Headers:</strong> Add <code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:12px">X-Api-Key</code> = the key you saved above<br>
-        5. Click <strong>Test</strong> — UnrarTool will log a successful test event
-      </div>
+    <div class="fg" style="margin-bottom:12px">
+      <label class="fl">${meta.label} API Key</label>
+      <input type="password" class="fi" id="wh-key-${s.source}" style="font-family:var(--mono)"
+        placeholder="${s.has_key ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' + (s.key_suffix || '????') + ' \u2014 paste to replace' : 'Found in ' + meta.label + ' \u2192 Settings \u2192 General \u2192 Security \u2192 API Key'}">
+      <div class="fh">${s.has_key ? '<span style="color:var(--ok)">&#10003; Key saved securely</span>' : 'Paste your ' + meta.label + ' API key here.'}</div>
     </div>
-
-    ${s.hit_count > 0 ? `<div style="font-size:12px;color:var(--text3);margin-top:8px;display:flex;gap:12px">
-      <span>✓ ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} received</span>
-      <span>Last: ${ago(s.last_hit)}</span>
-    </div>` : `<div style="font-size:12px;color:var(--text3);margin-top:8px">No webhook hits yet — click Test in ${meta.label} after setup to verify</div>`}
+    <div style="display:flex;gap:8px;margin-bottom:${hasConfig ? '12px' : '0'}">
+      <button class="btn btn-primary btn-sm" onclick="saveSource('${s.source}')">Save</button>
+      ${hasConfig ? `<button class="btn btn-danger btn-sm" onclick="clearSource('${s.source}')">Clear</button>` : ''}
+    </div>
+    ${hasConfig ? `
+    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:10px 14px;font-size:12.5px;color:var(--text2);line-height:1.9">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:6px">Webhook setup in ${meta.label}</div>
+      Settings \u2192 Connect \u2192 + \u2192 Webhook<br>
+      URL: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">http://UNRARTOOL_IP:8080/api/webhook/${s.source}</code><br>
+      Method: <strong>POST</strong> &nbsp;\u00b7&nbsp; Trigger: <strong>On Download</strong><br>
+      Header: <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">X-Api-Key</code> = your ${meta.label} API key (same one saved above)
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-top:8px">
+      ${s.hit_count > 0
+        ? `&#10003; ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} \u00b7 Last: ${ago(s.last_hit)}`
+        : `No webhook hits yet \u2014 click Test Connection above, then click Test in ${meta.label} after setup.`}
+    </div>` : ''}
   </div>`;
 }
 
@@ -1116,23 +1111,42 @@ async function toggleSource(source, currentEnabled) {
   await loadWebhookSources();
 }
 
-async function saveKey(source) {
-  const input = el(`wh-key-${source}`);
-  const key   = input?.value?.trim();
-  if (!key) { toast('Please paste a key before saving', 'warn'); return; }
-  if (key.length < 8) { toast('Key must be at least 8 characters', 'warn'); return; }
+async function saveSource(source) {
+  const urlVal = el(`wh-url-${source}`)?.value?.trim();
+  const keyVal = el(`wh-key-${source}`)?.value?.trim();
+  if (!urlVal) { toast('Please enter the app URL', 'warn'); return; }
+  if (!keyVal) { toast('Please enter the API key', 'warn'); return; }
+  if (!urlVal.startsWith('http')) { toast('URL must start with http:// or https://', 'warn'); return; }
+  try {
+    await api(`/api/webhooks/sources/${source}/save-key`, 'POST', { app_url: urlVal, api_key: keyVal });
+    toast(`${SOURCE_META[source]?.label || source} settings saved`, 'ok');
+    await loadWebhookSources();
+  } catch(e) { toast('Save failed: ' + e.message, 'err'); }
+}
 
-  await api(`/api/webhooks/sources/${source}/save-key`, 'POST', { key });
-  input.value = '';
-  toast(`${SOURCE_META[source]?.label || source} key saved securely`, 'ok');
+async function clearSource(source) {
+  if (!confirm(`Clear all settings for ${SOURCE_META[source]?.label || source}?`)) return;
+  await api(`/api/webhooks/sources/${source}/key`, 'DELETE');
+  toast('Settings cleared', 'warn');
   await loadWebhookSources();
 }
 
-async function revokeKey(source) {
-  if (!confirm(`Clear the API key for ${SOURCE_META[source]?.label || source}? Webhooks from this source will stop being authenticated.`)) return;
-  await api(`/api/webhooks/sources/${source}/key`, 'DELETE');
-  toast('Key cleared', 'warn');
-  await loadWebhookSources();
+async function testSource(source) {
+  const btn = el(`test-btn-${source}`);
+  const resultEl = el(`test-result-${source}`);
+  if (!btn || !resultEl) return;
+  btn.textContent = 'Testing\u2026'; btn.disabled = true;
+  resultEl.style.display = 'none';
+  try {
+    const r = await api(`/api/webhooks/sources/${source}/test`);
+    resultEl.style.display = '';
+    resultEl.innerHTML = r.ok
+      ? `<div class="alert alert-ok">\u2713 Connected to ${esc(r.appName)} v${esc(r.version)}</div>`
+      : `<div class="alert alert-err">\u2717 ${esc(r.error)}</div>`;
+  } catch(e) {
+    resultEl.style.display = '';
+    resultEl.innerHTML = `<div class="alert alert-err">\u2717 ${esc(e.message)}</div>`;
+  } finally { btn.textContent = 'Test Connection'; btn.disabled = false; }
 }
 
 // ─── THEME ────────────────────────────────────────────────────────────────
