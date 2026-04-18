@@ -1,30 +1,6 @@
 # UnrarTool
 
-A self-hosted Docker container for automatically extracting split RAR archives. Built for Unraid but works with any Docker-compatible host via `docker-compose`. Features a sleek web UI with a file browser, job queue, unified automation hub, real-time progress, and webhook integration with Sonarr, Radarr, Lidarr, and Readarr.
-
----
-
-## Features
-
-- **File Browser** — Navigate mounted volumes with filter, sort, and multi-select support
-- **Filter & Sort** — Filter by name, type (All / Folders / RAR Only / Files / Not Done), sort by name, date, size, or RAR count
-- **Multi-Select** — Checkboxes on every folder; queue or mark multiple folders at once via a floating action bar
-- **Real-time Progress** — Smooth progress bar and ETA driven directly from `unrar`'s stdout output
-- **Job Queue** — Live status updates via WebSocket; cancel, retry, or force-retry any job
-- **Coloured Source Badges** — Every job in the queue, history, and dashboard shows a coloured pill badge indicating exactly how it was triggered: Manual (purple), Watcher (blue), Scheduler (grey), Sonarr (cyan), Radarr (gold), Lidarr (teal), Readarr (orange)
-- **Sources Hub** — Unified **Sources** page (renamed from Watch Folders) combining filesystem watch folder management and *arr webhook configuration, with live source status cards at the top
-- **Dashboard Sources Widget** — Card grid on the dashboard showing active/inactive status and last trigger time for every scanning source
-- **Watch Folders** — Filesystem event detection (watchdog) queues new RARs the instant they land
-- **Scheduler** — Periodic background scan of all watch folders (configurable interval)
-- **Smart Exclusions** — Auto-excluded after every successful extraction; manual "✓ Mark Done" button always visible in the file browser
-- **Force Re-extract** — Override any exclusion when you need to re-run
-- **Webhook Integration** — Optional direct integration with Sonarr, Radarr, Lidarr, and Readarr. Enter each app's URL and API key, test the connection, then point the app's webhook at UnrarTool. Especially useful on SMB/NFS mounts where filesystem events are unreliable.
-- **RAR5 + Split RAR** — Supports `.part01.rar` and legacy `.rar + .r00/.r01` formats
-- **Password Support** — Per-folder RAR passwords for encrypted archives
-- **Incomplete Archive Detection** — Skips and logs an error if parts are missing before attempting extraction
-- **Dark / Light Mode** — Toggle in the sidebar
-- **Live Log Viewer** — Filterable log viewer; all activity recorded to SQLite
-- **Unraid Update Detection** — OCI image labels ensure Unraid shows an update badge whenever a new version is pushed to Docker Hub
+A self-hosted Docker container for automatically extracting split RAR archives. Built for Unraid but works anywhere Docker runs.
 
 ---
 
@@ -42,24 +18,21 @@ services:
       - "8080:8080"
     volumes:
       - /path/to/downloads:/data/downloads
-      - /path/to/media:/data/media
       - /path/to/appdata/unrartool:/config
     environment:
       DATA_PATH: /data
       CONFIG_PATH: /config
-      PORT: "8080"
 ```
 
 Open `http://<your-server-ip>:8080`.
 
-### Unraid Setup
+### Unraid
 
-1. In Unraid → Docker tab → **Add Container**
-2. In the **Template** field, paste:
-   ```
-   https://raw.githubusercontent.com/hythamjurdi/unrartool/main/unraid/unrartool.xml
-   ```
-3. Adjust the volume paths to match your setup and click **Apply**
+In Unraid → Docker → Add Container → paste into the Template field:
+```
+https://raw.githubusercontent.com/hythamjurdi/unrartool/main/unraid/unrartool.xml
+```
+Adjust volume paths and click Apply.
 
 ---
 
@@ -67,196 +40,90 @@ Open `http://<your-server-ip>:8080`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATA_PATH` | `/data` | Root path shown in the file browser on first load |
-| `CONFIG_PATH` | `/config` | Where `unrartool.db` and settings are stored |
-| `PORT` | `8080` | Port the web server listens on |
-| `PUID` | `99` | User ID for file ownership (Unraid: 99 = nobody) |
-| `PGID` | `100` | Group ID for file ownership (Unraid: 100 = users) |
+| `DATA_PATH` | `/data` | Root path shown in the file browser |
+| `CONFIG_PATH` | `/config` | Where the database and settings are stored |
+| `PORT` | `8080` | Web UI port |
+| `PUID` | `99` | User ID for file ownership |
+| `PGID` | `100` | Group ID for file ownership |
 
 ---
 
-## Settings (in-app)
+## How It Works
+
+### File Browser
+Browse your mounted folders. Every folder has three action buttons:
+- **Extract** — queue it immediately (opens a dialog for password and post-action)
+- **✓ Mark Done** — exclude it from all automation permanently
+- **Watch** — add it as a watch folder
+
+Use the search bar, type filters (All / Folders / RAR Only / Not Done), and sort options to navigate large libraries. Check multiple folders and use the floating **Queue Selected** bar to batch-queue them at once.
+
+### Sources Page
+The Sources page is split into two tabs:
+
+**Watch Folders** — add any folder and UnrarTool monitors it in real time (recursive). New RARs are queued the moment they appear. A periodic scheduler also re-scans all watch folders on a configurable interval (default 30 min) to catch anything missed.
+
+***arr Webhooks** — optionally connect Sonarr, Radarr, Lidarr, or Readarr. When a download finishes, the app sends UnrarTool an instant notification rather than waiting for the next filesystem scan. Useful on SMB/NFS mounts where filesystem events are unreliable.
+
+To set up: go to **Sources → *arr Webhooks**, enable the toggle, then for each app enter its URL and paste in its API key (found in that app under Settings → General → Security). Hit **Test Connection** to verify, then add UnrarTool as a webhook in that app pointing to `http://UNRARTOOL_IP:8080/api/webhook/sonarr` (or radarr/lidarr/readarr). The UI shows the exact URL and steps inline per source.
+
+### Exclusions
+After a successful extraction, the folder is automatically excluded so it's never re-extracted. The exclusion appears in the **Exclusions** page and as a **✓ Done** badge in the file browser. Click **↺ Re-enable** at any time to clear it, or use **Force Re-extract** when queueing to override it.
+
+### Source Badges
+Every job in the queue, history, and dashboard shows a coloured badge showing how it was triggered:
+
+| Badge | Colour | Meaning |
+|---|---|---|
+| Manual | Purple | Queued via File Browser |
+| Watcher | Blue | Triggered by filesystem event |
+| Scheduler | Grey | Triggered by periodic scan |
+| Sonarr | Cyan | Sonarr webhook |
+| Radarr | Gold | Radarr webhook |
+| Lidarr | Teal | Lidarr webhook |
+| Readarr | Orange | Readarr webhook |
+
+### Settings
+Found under **Settings** in the sidebar:
 
 | Setting | Default | Description |
 |---|---|---|
 | Scan Interval | 30 min | How often the scheduler re-scans watch folders |
-| Max Concurrent Extractions | 1 | How many RARs to extract simultaneously |
-| Default Post-Extraction Action | Keep | What to do with RAR files after successful extraction |
-| Trash Folder | `/config/trash` | Destination when post-action is "Move to trash" |
-
----
-
-## File Browser
-
-### Filters
-| Filter | Shows |
-|---|---|
-| All | Everything in the current directory |
-| Folders | Directories only |
-| RAR Only | Directories containing at least one RAR set |
-| Files | Non-directory files only |
-| Not Done | Directories not yet excluded |
-
-### Sort Options
-Name A→Z / Z→A · Newest / Oldest · Size Large→Small / Small→Large · Most RAR Sets · Type (Folders first)
-
-### Multi-Select
-Check any folder's checkbox to select it. Use **Select All** to select all visible folders. A floating action bar appears at the bottom showing the count with **Queue Selected**, **Mark Done**, and **Clear** actions.
-
----
-
-## Webhook Integration
-
-UnrarTool can connect directly to your \*arr apps so they notify it the instant a download finishes — no filesystem polling delay, works reliably on SMB/NFS mounts.
-
-### How it works
-1. In UnrarTool → **Settings → Webhook Integration** → enable the master toggle
-2. For each app, enter its **URL** and **API Key** and click **Save**
-3. Click **Test Connection** to verify UnrarTool can reach the app
-4. In the \*arr app, add a webhook pointing back to UnrarTool (instructions shown per-source in the UI)
-
-### Default ports
-| App | Default Port |
-|---|---|
-| Sonarr | 8989 |
-| Radarr | 7878 |
-| Lidarr | 8686 |
-| Readarr | 8787 |
-
-### Webhook URL format
-```
-http://YOUR_IP:8080/api/webhook/sonarr
-http://YOUR_IP:8080/api/webhook/radarr
-http://YOUR_IP:8080/api/webhook/lidarr
-http://YOUR_IP:8080/api/webhook/readarr
-```
-
-### In each \*arr app
-Go to **Settings → Connect → + → Webhook**:
-- **URL**: as above (replace `YOUR_IP:8080` with your UnrarTool address)
-- **Method**: POST
-- **Trigger**: On Download
-- **Header**: `X-Api-Key` = your \*arr API key (the same one saved in UnrarTool)
-
-### Security
-- API keys stored in the local SQLite database (same as all other tools in the \*arr ecosystem)
-- Webhook validation uses SHA256 hashing and constant-time comparison to prevent timing attacks
-- IP-based rate limiting: 5 failed auth attempts → 5 minute block per IP
-- Auth failures always return an identical 401 — no information leakage
-- Key values are never written to logs
-
----
-
-## Exclusion System
-
-| Source | When added |
-|---|---|
-| Auto | After every successful extraction (per RAR + per folder when all RARs done) |
-| Manual | "✓ Mark Done" in file browser, or the Exclusions page |
-
-- The **watcher**, **scheduler**, and **webhook handler** all respect exclusions
-- Click **↺ Re-enable** on any excluded folder to clear it
-- **Force Re-extract** in the queue modal or **Force Retry** on failed jobs bypasses exclusions
-
----
-
-## API Reference
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/files/browse?path=…` | List directory contents |
-| `GET` | `/api/jobs` | List jobs (`?status=…&limit=…`) |
-| `POST` | `/api/jobs` | Queue a path (`force=true` bypasses exclusion) |
-| `POST` | `/api/jobs/{id}/cancel` | Cancel a job |
-| `POST` | `/api/jobs/{id}/retry?force=true` | Retry (force clears exclusion) |
-| `DELETE` | `/api/jobs/{id}` | Delete a job from history |
-| `GET` | `/api/folders` | List watch folders |
-| `POST` | `/api/folders` | Add a watch folder |
-| `PATCH` | `/api/folders/{id}` | Update a watch folder |
-| `DELETE` | `/api/folders/{id}` | Remove a watch folder |
-| `POST` | `/api/folders/{id}/scan` | Trigger immediate scan |
-| `POST` | `/api/folders/scan-all` | Scan all watch folders now |
-| `GET` | `/api/exclusions` | List exclusions |
-| `POST` | `/api/exclusions` | Add exclusion manually |
-| `DELETE` | `/api/exclusions/by-path?path=…` | Remove exclusion by path |
-| `GET` | `/api/settings` | Get settings |
-| `PUT` | `/api/settings` | Update settings |
-| `GET` | `/api/logs` | Get log entries |
-| `DELETE` | `/api/logs` | Clear logs |
-| `POST` | `/api/webhook/sonarr` | Sonarr webhook receiver (`X-Api-Key` header) |
-| `POST` | `/api/webhook/radarr` | Radarr webhook receiver (`X-Api-Key` header) |
-| `POST` | `/api/webhook/lidarr` | Lidarr webhook receiver (`X-Api-Key` header) |
-| `POST` | `/api/webhook/readarr` | Readarr webhook receiver (`X-Api-Key` header) |
-| `GET` | `/api/webhooks/sources` | List webhook source status |
-| `PATCH` | `/api/webhooks/sources/{source}?enabled=` | Enable/disable a source |
-| `POST` | `/api/webhooks/sources/{source}/save-key` | Save URL + API key |
-| `DELETE` | `/api/webhooks/sources/{source}/key` | Clear credentials |
-| `GET` | `/api/webhooks/sources/{source}/test` | Test connection to \*arr app |
-| `GET` | `/api/webhooks/enabled` | Get master webhook toggle |
-| `PUT` | `/api/webhooks/enabled?enabled=` | Set master webhook toggle |
-
-WebSocket at `ws://<host>/ws` — events: `new_job`, `job_update`, `job_progress`, `exclusion_added`, `exclusion_removed`.
+| Max Concurrent Extractions | 1 | Recommended to keep at 1 |
+| Default Post-Extraction Action | Keep | Keep / Delete / Move to trash |
+| Trash Folder | `/config/trash` | Used when post-action is Move to trash |
 
 ---
 
 ## Notes
 
-- **No authentication** — designed for trusted LAN use. Place behind Nginx Proxy Manager or Traefik with auth if you need external access.
-- The SQLite database lives at `$CONFIG_PATH/unrartool.db`. Back it up via Unraid's appdata backup to preserve job history and settings.
-- Extraction is done **in-place** — files are written to the same directory as the RAR set.
-- Runs as a single uvicorn worker — intentional for SQLite + asyncio compatibility.
-- Works on any Docker host — not Unraid-specific.
+- No authentication — designed for trusted LAN use. Put it behind a reverse proxy (Nginx Proxy Manager, Traefik) if you need external access.
+- Extraction is always in-place — files land in the same folder as the RAR.
+- Watch folders scan recursively — adding `/data/downloads` catches RARs in all subdirectories.
+- The database lives at `$CONFIG_PATH/unrartool.db` — include it in your Unraid appdata backup.
 
 ---
 
 ## Changelog
 
 ### v1.3.0
-- **Sources page** — renamed nav item from "Watch Folders" to "Sources"; merged filesystem watch folder management and *arr webhook configuration into a single unified page with a tab bar (Watch Folders / *arr Webhooks)
-- **Source status cards** — live status cards at the top of the Sources page showing each scanning method's active state, folder count, last trigger time, and webhook hit count
-- **Dashboard scanning sources widget** — card grid added to the dashboard showing all active scanning sources with status and last triggered time at a glance
-- **Coloured source badges** — every job in the queue, history, and dashboard now shows a coloured pill badge identifying how it was triggered: Manual (purple), Watcher (blue), Scheduler (grey), Sonarr (cyan), Radarr (gold), Lidarr (teal), Readarr (orange). *arr sources use each app's actual brand colour.
-- **README** — fully updated with Sources page docs, badge reference, and changelog
+- **Sources page** — "Watch Folders" nav item renamed to "Sources"; watch folder management and *arr webhook configuration merged into one page with a tab bar
+- **Source status cards** — live status cards at the top of the Sources page showing each scanning method's state, last trigger time, and hit count
+- **Dashboard sources widget** — card grid on the dashboard showing all active sources with status and last triggered time
+- **Coloured source badges** — every job now shows a coloured badge identifying how it was triggered; *arr sources use each app's actual brand colour
 
 ### v1.2.1
-- **Fix: webhook source cards not rendering** — added SQLite migration on startup to add `app_url` and `arr_api_key` columns to existing `webhook_sources` tables. Upgrading users with a pre-existing database were hitting a silent column-missing error that prevented the sources list from loading.
-- **Fix: removed stale security description** from the webhook settings UI — the text referencing key generation was outdated after the UX change to paste-in keys
+- Fixed webhook source cards not rendering after upgrade (missing DB columns)
+- Removed stale text from settings UI
 
 ### v1.2.0
-- **Webhook Integration** — Sonarr, Radarr, Lidarr, and Readarr can notify UnrarTool the instant a download completes. Enter each app's URL and API key in Settings → Webhook Integration. UnrarTool tests connectivity and uses the same credentials for incoming webhook validation.
-- **Test Connection button** — per-source button calls the \*arr app's `/system/status` endpoint and reports the app name and version, or a clear error message
-- **Clean UX** — URL + API key input fields per source; no key generation or copying required; instructions shown inline per source
-- **Security** — webhook auth uses SHA256 hashing + constant-time comparison; IP rate limiting (5 failures → 5 min block); keys never logged; identical 401 for all auth failures
-- **Optional** — disabled by default; each source enabled independently once credentials are saved
-- **Test event support** — clicking Test in \*arr apps returns 200 OK without triggering extraction
-- **Hit counter** — each source card shows total webhook hits received and the last received time
-- **httpx** added to dependencies for async outbound HTTP calls
-- README fully updated with webhook setup, default ports, and all current features
+- **Webhook integration** — optional Sonarr, Radarr, Lidarr, Readarr support via Sources → *arr Webhooks tab
+- **Test Connection** — verify connectivity to each *arr app from within UnrarTool
+- Per-source enable/disable, hit counter, last received timestamp
 
 ### v1.1.0
-- **File Browser: Filter & Sort** — search by name; filter by All / Folders / RAR Only / Files / Not Done; sort by name, modified date, size, or RAR count
-- **File Browser: Multi-Select** — checkboxes on every folder, select-all toggle, floating action bar with Queue Selected and Mark Done
-- **Queue Selected** — one extraction settings dialog applies to all selected folders
-- **Mark Done (multi)** — mark multiple folders excluded in a single click
-- README updated with filter/sort reference
-
-### v1.0.1
-- Bump version to test Docker Hub → Unraid update detection pipeline
+- File browser filter, sort, and multi-select with floating action bar
+- Batch queue and batch mark-done for multiple folders
 
 ### v1.0.0
-- Initial release
-- File browser with always-visible Extract and Mark as Done buttons
-- Real-time progress bar from `unrar` stdout percentage output
-- Job queue with ETA, cancel, retry, force-retry
-- Watch folders with filesystem event detection
-- APScheduler periodic background scan
-- Auto-exclusion after every successful extraction
-- Manual Mark as Done in file browser
-- Force Re-extract override
-- Exclusions page
-- Per-folder password support
-- Dark / Light theme
-- Filterable log viewer
-- OCI image labels for Unraid update detection
-- GitHub Actions CI/CD → Docker Hub on every `git push`
-- Unraid Community Applications XML template + icon
+- Initial release: file browser, job queue, watch folders, scheduler, real-time progress, exclusion system, dark/light theme, log viewer, Unraid template, GitHub Actions CI/CD
