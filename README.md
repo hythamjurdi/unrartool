@@ -106,6 +106,12 @@ Found under **Settings** in the sidebar:
 
 ## Changelog
 
+### v1.4.0
+- **Clean Up feature** — new "Clean Up" button in the Dashboard, Queue, and History topbars opens a full-screen modal listing every file UnrarTool has extracted across all completed jobs. Files are grouped by folder, all checked by default, with individual checkboxes to deselect anything you want to keep. Shows file sizes and a running total of what will be freed. Live progress bar during deletion. Only files UnrarTool itself extracted are ever listed — RARs and unrelated files are never touched.
+- **Extracted file tracking** — every completed extraction now records exactly which files were written (folder snapshot diff before/after) in the database. This is the safe foundation for the clean-up feature.
+- **`GET /api/cleanup`** — returns all tracked extracted files still on disk
+- **`POST /api/cleanup/delete`** — deletes specified paths; rejects any path not in the tracked list as a safety guard
+
 ### v1.3.5
 - **App-specific trigger instructions** — Radarr source card now correctly shows "On File Import only (Radarr has no Import Complete)" while Sonarr shows "On File Import + On Import Complete"
 

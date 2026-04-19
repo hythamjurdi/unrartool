@@ -9,6 +9,8 @@ retried after DEFER_RETRY_SECONDS rather than marked as failed.
 """
 
 import asyncio
+import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -43,6 +45,30 @@ DEFER_RETRY_SECONDS = 300   # 5 minutes
 
 # Maximum number of auto-defers before giving up with a real failure
 MAX_DEFER_RETRIES = 6       # 6 × 5 min = 30 min max wait
+
+
+# ---------------------------------------------------------------------------
+# File tracking helpers
+# ---------------------------------------------------------------------------
+
+def _snapshot_folder(folder: str) -> set[str]:
+    """Return a set of all file paths currently in folder (recursive)."""
+    result = set()
+    try:
+        for root, _, files in os.walk(folder):
+            for f in files:
+                result.add(os.path.join(root, f))
+    except OSError:
+        pass
+    return result
+
+
+def _new_files(before: set[str], after: set[str], rar_parts: set[str]) -> list[str]:
+    """
+    Return files that appeared after extraction, excluding RAR parts themselves.
+    These are the files UnrarTool wrote — the ones we want to track for clean-up.
+    """
+    return sorted(p for p in (after - before) if p not in rar_parts)
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +379,11 @@ class QueueManager:
                 await self._fail(job_id, f"Incomplete archive — {err}")
             return
 
+        # Snapshot folder BEFORE extraction so we know exactly what we wrote
+        from .extractor import rar_part_paths as _rpp
+        folder_snapshot = await asyncio.to_thread(_snapshot_folder, dest_path)
+        rar_part_set    = set(await asyncio.to_thread(_rpp, rar_file))
+
         total_size = await get_declared_size(rar_file)
 
         try:
@@ -390,7 +421,7 @@ class QueueManager:
             await self._fail(job_id, str(e))
             return
 
-        await self._complete(job_id, rar_file, post_action)
+        await self._complete(job_id, rar_file, post_action, folder_snapshot, rar_part_set)
 
     async def _defer(self, job_id: int, reason: str, retry_count: int):
         """
@@ -460,7 +491,14 @@ class QueueManager:
         await ws_manager.broadcast({"type": "job_update", "job_id": job_id, "status": "failed", "error": error})
         _log(f"Job #{job_id} failed: {error}", level="ERROR", job_id=job_id)
 
-    async def _complete(self, job_id: int, rar_file: str, action: str):
+    async def _complete(
+        self,
+        job_id: int,
+        rar_file: str,
+        action: str,
+        folder_snapshot: set[str],
+        rar_part_set: set[str],
+    ):
         db = new_session()
         try:
             trash = _get_setting(db, "trash_folder", "/config/trash")
@@ -474,15 +512,19 @@ class QueueManager:
             await asyncio.to_thread(trash_rar_parts, rar_file, trash)
             _log(f"Job #{job_id}: RAR parts moved to trash ({trash})", job_id=job_id)
 
+        # ── TRACK EXTRACTED FILES ───────────────────────────────────────────
+        # Diff folder snapshot to find exactly what unrar wrote.
+        # Exclude RAR parts so we never accidentally track them.
+        dest_path       = str(Path(rar_file).parent)
+        after_snapshot  = await asyncio.to_thread(_snapshot_folder, dest_path)
+        extracted_files = _new_files(folder_snapshot, after_snapshot, rar_part_set)
+
         # ── AUTO-EXCLUDE ────────────────────────────────────────────────────
-        # Record this specific RAR as done. If all RARs in the parent folder
-        # are now done, also exclude the whole folder so the scheduler and
-        # watcher can skip it with a single lookup.
         db = new_session()
         try:
             _add_exclusion(db, rar_file, reason="auto_extracted")
 
-            folder = str(Path(rar_file).parent)
+            folder   = str(Path(rar_file).parent)
             all_rars = await asyncio.to_thread(find_rar_sets, folder)
             if all_rars and all(
                 db.query(Exclusion).filter(Exclusion.path == r).first() is not None
@@ -493,21 +535,25 @@ class QueueManager:
 
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
-                job.status = "completed"
-                job.progress = 100.0
-                job.eta_seconds = 0
-                job.completed_at = datetime.utcnow()
+                job.status          = "completed"
+                job.progress        = 100.0
+                job.eta_seconds     = 0
+                job.completed_at    = datetime.utcnow()
+                job.files_extracted = json.dumps(extracted_files)
             db.commit()
         finally:
             db.close()
 
+        _log(
+            f"Job #{job_id} completed — {len(extracted_files)} file(s) extracted and tracked",
+            job_id=job_id,
+        )
         await ws_manager.broadcast({
             "type": "job_update",
             "job_id": job_id,
             "status": "completed",
             "progress": 100,
         })
-        _log(f"Job #{job_id} completed and auto-excluded", job_id=job_id)
 
 
 queue_manager = QueueManager()
