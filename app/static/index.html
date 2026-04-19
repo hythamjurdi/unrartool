@@ -1329,9 +1329,15 @@ function webhookSourceCard(s) {
     </div>
     <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:10px 14px;font-size:12.5px;color:var(--text2);line-height:2">
       In ${meta.label}: <strong>Settings → Connect → + → Webhook</strong><br>
-      <span style="color:var(--text3);font-size:12px">URL:</span> <code style="background:var(--surface2);padding:1px 6px;border-radius:3px;font-size:12px">http://UNRARTOOL_IP:8080/api/webhook/${s.source}</code><br>
-      <span style="color:var(--text3);font-size:12px">Trigger:</span> <strong>On Import</strong> &nbsp;·&nbsp;
-      <span style="color:var(--text3);font-size:12px">Header:</span> <code style="background:var(--surface2);padding:1px 6px;border-radius:3px;font-size:12px">X-Api-Key</code> = your ${meta.label} API key
+      <span style="color:var(--text3);font-size:12px">Webhook URL</span> — this tells ${meta.label} where to send a notification when a download finishes. Point it at <strong>UnrarTool</strong>:<br>
+      <code style="background:var(--surface2);padding:2px 8px;border-radius:3px;font-size:12px;display:inline-block;margin:2px 0">http://UNRAID_IP:UNRARTOOL_PORT/api/webhook/${s.source}</code><br>
+      <span style="color:var(--text3);font-size:12px">Method:</span> <strong>POST</strong><br>
+      <span style="color:var(--text3);font-size:12px">Triggers:</span>
+      ${s.source === 'sonarr' ? '<strong>On File Import</strong> + <strong>On Import Complete</strong>' :
+        s.source === 'radarr' ? '<strong>On File Import</strong> only (Radarr has no Import Complete)' :
+        '<strong>On File Import</strong>'} — uncheck everything else<br>
+      <span style="color:var(--text3);font-size:12px">Username / Password:</span> leave empty<br>
+      <span style="color:var(--text3);font-size:12px">Headers → Key:</span> <code style="background:var(--surface2);padding:1px 6px;border-radius:3px;font-size:12px">X-Api-Key</code> &nbsp;<span style="color:var(--text3);font-size:12px">Value:</span> your ${meta.label} API key
     </div>
 
     <!-- Hit counter -->

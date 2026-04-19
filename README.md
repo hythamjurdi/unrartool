@@ -106,6 +106,15 @@ Found under **Settings** in the sidebar:
 
 ## Changelog
 
+### v1.3.5
+- **App-specific trigger instructions** — Radarr source card now correctly shows "On File Import only (Radarr has no Import Complete)" while Sonarr shows "On File Import + On Import Complete"
+
+### v1.3.4
+- **Webhook URL instruction clarified** — now explicitly says the URL points to UnrarTool itself (not Sonarr/Radarr), uses `UNRAID_IP:UNRARTOOL_PORT` as the placeholder so it's clear the port is UnrarTool's port, not the *arr app's port
+
+### v1.3.3
+- **Webhook setup instructions** — step 2 in each source card now shows every field exactly as it appears in Sonarr/Radarr: Webhook URL, Method (POST), which triggers to check (On File Import / On Import Complete only), that Username/Password should be left empty, and that the API key goes in Headers → Key: `X-Api-Key` / Value: your API key
+
 ### v1.3.2
 - **Webhook status indicator** — source cards in Sources → *arr Webhooks now show 4 distinct states: Not configured (grey) · Disabled (grey) · Waiting — webhook not set up in app yet (amber) · Active — receiving webhooks (green with glow). The border of each card changes colour to match. "Active" only turns green once real webhook hits have been received, not just when credentials are saved.
 - **Clearer 2-step setup flow** — source cards now explicitly show Step 1 (connect UnrarTool to the app) and Step 2 (add UnrarTool as a webhook in the app), with a "✓ Done" or "▶ Action required" marker on Step 2 based on whether hits have been received
