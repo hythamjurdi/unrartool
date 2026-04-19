@@ -106,6 +106,15 @@ Found under **Settings** in the sidebar:
 
 ## Changelog
 
+### v1.3.2
+- **Webhook status indicator** — source cards in Sources → *arr Webhooks now show 4 distinct states: Not configured (grey) · Disabled (grey) · Waiting — webhook not set up in app yet (amber) · Active — receiving webhooks (green with glow). The border of each card changes colour to match. "Active" only turns green once real webhook hits have been received, not just when credentials are saved.
+- **Clearer 2-step setup flow** — source cards now explicitly show Step 1 (connect UnrarTool to the app) and Step 2 (add UnrarTool as a webhook in the app), with a "✓ Done" or "▶ Action required" marker on Step 2 based on whether hits have been received
+- **Dashboard webhook cards** — same 4-state logic applied to the dashboard sources widget; amber "Waiting" cards replace the misleading green for configured-but-not-yet-firing sources
+
+### v1.3.1
+- **Fix: auto-defer for mid-download extraction attempts** — when the filesystem watcher fires while qBittorrent (or any downloader) is still writing a RAR, unrar would fail with "is not RAR archive". UnrarTool now detects this specific class of error and automatically retries the job after 5 minutes, up to 6 times (30 min total), before giving up with a real failure. Jobs show as `pending` while waiting, not `failed`.
+- **Improved watcher stabilisation** — increased from 15 seconds to a double-check: wait 30 seconds after the last filesystem event, then compare file sizes 15 seconds apart. Only queues when the size is confirmed stable, avoiding false triggers on large files still downloading.
+
 ### v1.3.0
 - **Sources page** — "Watch Folders" nav item renamed to "Sources"; watch folder management and *arr webhook configuration merged into one page with a tab bar
 - **Source status cards** — live status cards at the top of the Sources page showing each scanning method's state, last trigger time, and hit count

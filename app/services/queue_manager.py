@@ -2,6 +2,10 @@
 queue_manager.py – Manages the extraction job queue.
 Supports concurrency limiting, cancellation, retry, WS progress broadcast,
 and a full exclusion system (manual + automatic after extraction).
+
+Auto-defer: when unrar reports the file is not yet a valid archive
+(still being written by the downloader), the job is automatically
+retried after DEFER_RETRY_SECONDS rather than marked as failed.
 """
 
 import asyncio
@@ -20,6 +24,25 @@ from .extractor import (
     get_declared_size,
     trash_rar_parts,
 )
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Phrases in unrar output that mean "file exists but isn't ready yet"
+# (still being written by the downloader, not a real corruption/error)
+_STILL_DOWNLOADING_PHRASES = (
+    "is not rar archive",
+    "no files to extract",
+    "bad archive",
+    "unexpected end of archive",
+)
+
+# How long to wait before retrying a deferred job
+DEFER_RETRY_SECONDS = 300   # 5 minutes
+
+# Maximum number of auto-defers before giving up with a real failure
+MAX_DEFER_RETRIES = 6       # 6 × 5 min = 30 min max wait
 
 
 # ---------------------------------------------------------------------------
@@ -309,19 +332,25 @@ class QueueManager:
             job.status = "running"
             job.started_at = datetime.utcnow()
             db.commit()
-            rar_file = job.rar_file
-            dest_path = str(Path(rar_file).parent)
-            password = job.password
+            rar_file    = job.rar_file
+            dest_path   = str(Path(rar_file).parent)
+            password    = job.password
             post_action = job.post_action
+            retry_count = job.retry_count or 0
         finally:
             db.close()
 
         await ws_manager.broadcast({"type": "job_update", "job_id": job_id, "status": "running", "progress": 0})
         _log(f"Job #{job_id} started: {rar_file}", job_id=job_id)
 
+        # Pre-flight: check all parts present
         ok, err = await check_parts_complete(rar_file)
         if not ok:
-            await self._fail(job_id, f"Incomplete archive — {err}")
+            # "Cannot find volume" means the downloader hasn't finished yet
+            if "missing part" in err.lower() or "cannot find volume" in err.lower():
+                await self._defer(job_id, err, retry_count)
+            else:
+                await self._fail(job_id, f"Incomplete archive — {err}")
             return
 
         total_size = await get_declared_size(rar_file)
@@ -341,7 +370,11 @@ class QueueManager:
                     db2.close()
 
                 if pct == -1.0:
-                    await self._fail(job_id, status_line)
+                    # Check if this is a "still downloading" error vs a real failure
+                    if any(p in status_line.lower() for p in _STILL_DOWNLOADING_PHRASES):
+                        await self._defer(job_id, status_line, retry_count)
+                    else:
+                        await self._fail(job_id, status_line)
                     return
 
                 await ws_manager.broadcast({
@@ -359,14 +392,68 @@ class QueueManager:
 
         await self._complete(job_id, rar_file, post_action)
 
+    async def _defer(self, job_id: int, reason: str, retry_count: int):
+        """
+        The file exists but isn't ready yet (still being downloaded).
+        Reset to pending and retry after DEFER_RETRY_SECONDS.
+        After MAX_DEFER_RETRIES attempts, give up and mark as failed.
+        """
+        if retry_count >= MAX_DEFER_RETRIES:
+            await self._fail(
+                job_id,
+                f"File not ready after {MAX_DEFER_RETRIES} retries ({DEFER_RETRY_SECONDS}s apart). "
+                f"Last error: {reason}"
+            )
+            return
+
+        new_count = retry_count + 1
+        wait_min  = DEFER_RETRY_SECONDS // 60
+
+        db = new_session()
+        try:
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if job:
+                job.status        = "pending"
+                job.progress      = 0.0
+                job.eta_seconds   = None
+                job.error_message = None
+                job.started_at    = None
+                job.retry_count   = new_count
+                db.commit()
+        finally:
+            db.close()
+
+        await ws_manager.broadcast({"type": "job_update", "job_id": job_id, "status": "pending"})
+        _log(
+            f"Job #{job_id} deferred (attempt {new_count}/{MAX_DEFER_RETRIES}) — "
+            f"file not ready yet, retrying in {wait_min} min. Reason: {reason[:120]}",
+            job_id=job_id,
+        )
+
+        # Sleep without holding the semaphore so other jobs can run
+        await asyncio.sleep(DEFER_RETRY_SECONDS)
+
+        # Re-queue only if not cancelled in the meantime
+        db2 = new_session()
+        try:
+            j = db2.query(Job).filter(Job.id == job_id).first()
+            if not j or j.status == "cancelled":
+                return
+        finally:
+            db2.close()
+
+        task = asyncio.create_task(self._process(job_id))
+        self._active_procs[job_id] = task
+        task.add_done_callback(lambda t: self._active_procs.pop(job_id, None))
+
     async def _fail(self, job_id: int, error: str):
         db = new_session()
         try:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job:
-                job.status = "failed"
+                job.status        = "failed"
                 job.error_message = error
-                job.completed_at = datetime.utcnow()
+                job.completed_at  = datetime.utcnow()
                 db.commit()
         finally:
             db.close()

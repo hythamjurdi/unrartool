@@ -22,6 +22,8 @@ def _run_migrations():
         # v1.2.0 — webhook source credentials
         "ALTER TABLE webhook_sources ADD COLUMN app_url VARCHAR",
         "ALTER TABLE webhook_sources ADD COLUMN arr_api_key VARCHAR",
+        # v1.3.1 — auto-defer retry counter
+        "ALTER TABLE jobs ADD COLUMN retry_count INTEGER DEFAULT 0",
         # future migrations go here
     ]
     with engine.connect() as conn:

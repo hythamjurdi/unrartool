@@ -1,10 +1,12 @@
 """
 watcher.py – watchdog-based filesystem monitor.
 When a .rar file appears in a watched folder, waits for the file to stabilise
-(size unchanged for STABILISE_SECS) then enqueues the RAR set.
+(size unchanged across two checks STABILISE_SECS apart) then enqueues the RAR set.
+The double-check catches cases where the downloader pauses briefly mid-write.
 """
 
 import asyncio
+import os
 import time
 from pathlib import Path
 from typing import Optional
@@ -17,7 +19,10 @@ from ..models import WatchedFolder
 from .extractor import is_first_rar_part
 from .queue_manager import queue_manager
 
-STABILISE_SECS = 15   # seconds of unchanged file size before treating as done
+# Wait this long after the last filesystem event before doing the first size check
+STABILISE_INITIAL_SECS = 30
+# Then wait this long and check size again — if unchanged, the file is done
+STABILISE_CONFIRM_SECS = 15
 
 
 class _Handler(FileSystemEventHandler):
@@ -41,16 +46,45 @@ class _Handler(FileSystemEventHandler):
             self._schedule(str(path))
 
     def _schedule(self, rar_path: str):
-        # Cancel existing timer for this path (re-detected)
+        # Reset timer on every filesystem event for this path
         handle = self._pending.pop(rar_path, None)
         if handle:
             handle.cancel()
-        handle = self._loop.call_later(STABILISE_SECS, self._fire, rar_path)
+        handle = self._loop.call_later(STABILISE_INITIAL_SECS, self._fire, rar_path)
         self._pending[rar_path] = handle
 
     def _fire(self, rar_path: str):
         self._pending.pop(rar_path, None)
-        asyncio.run_coroutine_threadsafe(self._enqueue(rar_path), self._loop)
+        asyncio.run_coroutine_threadsafe(self._check_and_enqueue(rar_path), self._loop)
+
+    @staticmethod
+    async def _check_and_enqueue(rar_path: str):
+        """
+        Double-check the file size is stable before enqueuing.
+        Wait STABILISE_INITIAL_SECS (handled by call_later above), then
+        check size, wait STABILISE_CONFIRM_SECS, check again.
+        Only enqueue if the size is identical — avoids firing mid-download.
+        """
+        try:
+            size1 = os.path.getsize(rar_path)
+        except OSError:
+            return  # File disappeared — download was cancelled
+        await asyncio.sleep(STABILISE_CONFIRM_SECS)
+        try:
+            size2 = os.path.getsize(rar_path)
+        except OSError:
+            return
+        if size1 != size2:
+            # Still growing — reschedule and wait again
+            asyncio.get_event_loop().call_later(
+                STABILISE_INITIAL_SECS,
+                lambda: asyncio.run_coroutine_threadsafe(
+                    _Handler._check_and_enqueue(rar_path),
+                    asyncio.get_event_loop()
+                )
+            )
+            return
+        await _Handler._enqueue(rar_path)
 
     @staticmethod
     async def _enqueue(rar_path: str):

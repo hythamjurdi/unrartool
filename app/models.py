@@ -24,7 +24,7 @@ class Job(Base):
     id              = Column(Integer, primary_key=True, index=True)
     folder_path     = Column(String, nullable=False)
     rar_file        = Column(String, nullable=False)   # first-part path
-    status          = Column(String, default="pending")  # pending|running|completed|failed|skipped|cancelled
+    status          = Column(String, default="pending")  # pending|running|completed|failed|skipped|cancelled|deferred
     progress        = Column(Float, default=0.0)
     eta_seconds     = Column(Integer, nullable=True)
     error_message   = Column(Text, nullable=True)
@@ -32,6 +32,7 @@ class Job(Base):
     password        = Column(String, nullable=True)
     source          = Column(String, default="manual")  # manual|watch|scheduled
     files_extracted = Column(Text, nullable=True)       # JSON list of extracted filenames
+    retry_count     = Column(Integer, default=0)        # auto-retry count for deferred jobs
     created_at      = Column(DateTime, default=datetime.utcnow)
     started_at      = Column(DateTime, nullable=True)
     completed_at    = Column(DateTime, nullable=True)

@@ -631,24 +631,29 @@ function renderDash() {
 
   // *arr webhooks
   if (whOn) {
-    const activeSrcs = whs.filter(s => s.enabled && s.has_key);
-    activeSrcs.forEach(s => {
-      const meta = {sonarr:{color:'#00CCFF',label:'Sonarr'},radarr:{color:'#FFC230',label:'Radarr'},lidarr:{color:'#00E5FF',label:'Lidarr'},readarr:{color:'#FF7F50',label:'Readarr'}};
-      const m = meta[s.source] || {color:'#888',label:s.source};
+    const configuredSrcs = whs.filter(s => s.has_key && s.app_url);
+    if (configuredSrcs.length === 0) {
       srcCards.push(srcStatusCard({
-        dot: m.color, label: m.label + ' Webhook',
-        status: `${s.hit_count || 0} hits`,
-        statusColor: 'var(--ok)',
-        meta: s.last_hit ? `Last trigger: ${ago(s.last_hit)}` : 'Waiting for first trigger',
-      }));
-    });
-    if (activeSrcs.length === 0) {
-      srcCards.push(srcStatusCard({
-        dot: '#444', label: '*arr Webhooks',
-        status: 'Enabled but not configured',
+        dot: '#f59e0b', label: '*arr Webhooks',
+        status: 'Enabled — not configured',
         statusColor: 'var(--warn)',
-        meta: 'Go to Sources → *arr Webhooks to set up',
+        meta: 'Go to Sources → *arr Webhooks to connect an app',
       }));
+    } else {
+      configuredSrcs.forEach(s => {
+        const meta = {sonarr:{color:'#00CCFF',label:'Sonarr'},radarr:{color:'#FFC230',label:'Radarr'},lidarr:{color:'#00E5FF',label:'Lidarr'},readarr:{color:'#FF7F50',label:'Readarr'}};
+        const m = meta[s.source] || {color:'#888',label:s.source};
+        const isReceiving = s.hit_count > 0;
+        srcCards.push(srcStatusCard({
+          dot: isReceiving ? m.color : '#f59e0b',
+          label: m.label + ' Webhook',
+          status: isReceiving ? `✓ Active — ${s.hit_count} hit${s.hit_count>1?'s':''}` : 'Waiting — finish setup in ' + m.label,
+          statusColor: isReceiving ? 'var(--ok)' : 'var(--warn)',
+          meta: isReceiving
+            ? (s.last_hit ? `Last trigger: ${ago(s.last_hit)}` : 'Receiving')
+            : 'Add UnrarTool as a webhook in ' + m.label,
+        }));
+      });
     }
   } else {
     srcCards.push(srcStatusCard({
@@ -1258,50 +1263,84 @@ async function loadWebhookSources() {
 function webhookSourceCard(s) {
   const meta = SOURCE_META[s.source] || { label: s.source, color: '#888', desc: '', port: 80 };
   const hasConfig = s.has_key && s.app_url;
-  const statusColor = s.enabled && hasConfig ? 'var(--ok)' : 'var(--text3)';
-  const statusText  = s.enabled && hasConfig ? 'Active' : hasConfig ? 'Inactive' : 'Not configured';
+  const isReceiving = hasConfig && s.hit_count > 0;
 
-  return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+  // 4 distinct states with clear meaning
+  // "Active" only when webhooks are actually being received
+  let statusDot, statusText, statusColor, borderColor;
+  if (!hasConfig) {
+    statusDot = '#555'; statusText = 'Not configured';
+    statusColor = 'var(--text3)'; borderColor = 'var(--border)';
+  } else if (!s.enabled) {
+    statusDot = '#555'; statusText = 'Disabled';
+    statusColor = 'var(--text3)'; borderColor = 'var(--border)';
+  } else if (!isReceiving) {
+    statusDot = '#f59e0b'; statusText = 'Waiting — webhook not set up in ' + meta.label + ' yet';
+    statusColor = 'var(--warn)'; borderColor = 'var(--warn)';
+  } else {
+    statusDot = meta.color; statusText = '\u2713 Active — receiving webhooks';
+    statusColor = 'var(--ok)'; borderColor = meta.color;
+  }
+
+  // Status indicator pill
+  const statusPill = `<div style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;background:var(--surface3);border:1px solid ${borderColor};font-size:12px;font-weight:600;color:${statusColor}">
+    <div style="width:7px;height:7px;border-radius:50%;background:${statusDot}${isReceiving ? ';box-shadow:0 0 6px ' + statusDot : ''}"></div>
+    ${statusText}
+  </div>`;
+
+  return `<div style="border:1px solid ${borderColor};border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:10px;transition:border-color .2s">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <div style="width:10px;height:10px;border-radius:50%;background:${meta.color};flex-shrink:0"></div>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:600">${meta.label} <span style="font-size:11px;font-weight:400;color:var(--text3)">${meta.desc}</span></div>
-        <div style="font-size:12px;color:${statusColor}">${statusText}</div>
-      </div>
+      <div style="font-size:14px;font-weight:600;flex:1">${meta.label} <span style="font-size:11px;font-weight:400;color:var(--text3)">${meta.desc}</span></div>
       ${hasConfig ? `<button class="btn btn-secondary btn-sm" id="test-btn-${s.source}" onclick="testSource('${s.source}')">Test Connection</button>` : ''}
-      ${s.enabled
-        ? `<button class="btn btn-ok btn-sm" onclick="toggleSource('${s.source}',true)">Enabled</button>`
-        : `<button class="btn btn-secondary btn-sm" onclick="toggleSource('${s.source}',false)">Disabled</button>`}
+      <button class="btn btn-${s.enabled ? 'ok' : 'secondary'} btn-sm" onclick="toggleSource('${s.source}',${s.enabled})">${s.enabled ? 'Enabled' : 'Disabled'}</button>
     </div>
+
+    <!-- Status pill -->
+    <div style="margin-bottom:14px">${statusPill}</div>
+
+    <!-- Test result banner -->
     <div id="test-result-${s.source}" style="display:none;margin-bottom:12px"></div>
+
+    <!-- Step 1: UnrarTool config -->
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">Step 1 — Connect UnrarTool to ${meta.label}</div>
     <div class="fg" style="margin-bottom:10px">
       <label class="fl">${meta.label} URL</label>
       <input type="text" class="fi" id="wh-url-${s.source}" value="${s.app_url ? esc(s.app_url) : ''}" placeholder="http://192.168.1.100:${meta.port}">
-      <div class="fh">The URL you use to access ${meta.label}.</div>
     </div>
-    <div class="fg" style="margin-bottom:12px">
+    <div class="fg" style="margin-bottom:10px">
       <label class="fl">${meta.label} API Key</label>
       <input type="password" class="fi" id="wh-key-${s.source}" style="font-family:var(--mono)"
-        placeholder="${s.has_key ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' + (s.key_suffix || '????') + ' \u2014 paste to replace' : 'Found in ' + meta.label + ' \u2192 Settings \u2192 General \u2192 Security \u2192 API Key'}">
-      <div class="fh">${s.has_key ? '<span style="color:var(--ok)">&#10003; Key saved securely</span>' : 'Paste your ' + meta.label + ' API key here.'}</div>
+        placeholder="${s.has_key ? '••••••••' + (s.key_suffix||'????') + ' — paste to replace' : 'Settings → General → Security → API Key'}">
+      <div class="fh">${s.has_key ? '<span style="color:var(--ok)">✓ Key saved</span>' : 'Paste from ' + meta.label + ' → Settings → General → Security'}</div>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:${hasConfig ? '12px' : '0'}">
+    <div style="display:flex;gap:8px;margin-bottom:16px">
       <button class="btn btn-primary btn-sm" onclick="saveSource('${s.source}')">Save</button>
       ${hasConfig ? `<button class="btn btn-danger btn-sm" onclick="clearSource('${s.source}')">Clear</button>` : ''}
     </div>
+
     ${hasConfig ? `
-    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:10px 14px;font-size:12.5px;color:var(--text2);line-height:1.9">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text3);margin-bottom:6px">Connecting ${meta.label}</div>
-      1. Grab your API key from ${meta.label} → <strong>Settings → General → Security</strong><br>
-      2. Paste it above and click <strong>Save</strong>, then <strong>Test Connection</strong><br>
-      3. In ${meta.label}, add a webhook pointing to:<br>
-      &nbsp;&nbsp;&nbsp;<code style="background:var(--surface2);padding:1px 5px;border-radius:3px">http://UNRARTOOL_IP:8080/api/webhook/${s.source}</code><br>
-      4. Set the <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">X-Api-Key</code> header to the same API key
+    <!-- Step 2: Configure webhook in the arr app -->
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">
+      Step 2 — Add UnrarTool as a webhook in ${meta.label}
+      ${isReceiving ? '<span style="color:var(--ok);font-size:11px;font-weight:600;margin-left:8px">✓ Done</span>' : '<span style="color:var(--warn);font-size:11px;font-weight:600;margin-left:8px">▶ Action required</span>'}
     </div>
-    <div style="font-size:12px;color:var(--text3);margin-top:8px">
-      ${s.hit_count > 0
-        ? `&#10003; ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} \u00b7 Last: ${ago(s.last_hit)}`
-        : `No webhook hits yet \u2014 click Test Connection above, then click Test in ${meta.label} after setup.`}
+    <div style="background:var(--surface3);border-radius:var(--radius-sm);padding:10px 14px;font-size:12.5px;color:var(--text2);line-height:2">
+      In ${meta.label}: <strong>Settings → Connect → + → Webhook</strong><br>
+      <span style="color:var(--text3);font-size:12px">URL:</span> <code style="background:var(--surface2);padding:1px 6px;border-radius:3px;font-size:12px">http://UNRARTOOL_IP:8080/api/webhook/${s.source}</code><br>
+      <span style="color:var(--text3);font-size:12px">Trigger:</span> <strong>On Import</strong> &nbsp;·&nbsp;
+      <span style="color:var(--text3);font-size:12px">Header:</span> <code style="background:var(--surface2);padding:1px 6px;border-radius:3px;font-size:12px">X-Api-Key</code> = your ${meta.label} API key
+    </div>
+
+    <!-- Hit counter -->
+    <div style="font-size:12px;color:${isReceiving ? 'var(--ok)' : 'var(--text3)'};margin-top:10px;display:flex;align-items:center;gap:6px">
+      ${isReceiving
+        ? `<div style="width:7px;height:7px;border-radius:50%;background:var(--ok)"></div>
+           ${s.hit_count} webhook hit${s.hit_count > 1 ? 's' : ''} received · Last: ${ago(s.last_hit)}`
+        : `<div style="width:7px;height:7px;border-radius:50%;background:#555"></div>
+           No webhook hits yet — complete Step 2 above, then click <strong>Test</strong> in ${meta.label} to verify`}
     </div>` : ''}
   </div>`;
 }
