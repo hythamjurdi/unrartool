@@ -372,8 +372,33 @@ class QueueManager:
         # Pre-flight: check all parts present
         ok, err = await check_parts_complete(rar_file)
         if not ok:
-            # "Cannot find volume" means the downloader hasn't finished yet
-            if "missing part" in err.lower() or "cannot find volume" in err.lower():
+            err_lower = err.lower()
+            # Phrases that mean the file exists but isn't fully written yet
+            # (watcher fired while downloader was still writing).
+            # These should defer and retry, not hard-fail.
+            _not_ready = (
+                "missing part",
+                "cannot find volume",
+                "is not rar archive",
+                "no files to extract",
+                "bad archive",
+                "unexpected end of archive",
+                "the file header is corrupt",
+                "corrupt",          # generic corrupt = likely truncated
+                "details:",         # unrar listing header with no usable content
+            )
+            # If none of the "still downloading" phrases match, check whether
+            # this is actually a real failure (wrong password, truly bad file).
+            # We do that by looking for phrases that are never transient.
+            _real_failure = (
+                "wrong password",
+                "bad password",
+                "encrypted",
+            )
+            is_not_ready   = any(p in err_lower for p in _not_ready)
+            is_real_failure = any(p in err_lower for p in _real_failure)
+
+            if is_not_ready and not is_real_failure:
                 await self._defer(job_id, err, retry_count)
             else:
                 await self._fail(job_id, f"Incomplete archive — {err}")

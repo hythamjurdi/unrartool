@@ -147,35 +147,61 @@ def _client_ip(request: Request) -> str:
 # Payload parsers
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Payload parsers
+# ---------------------------------------------------------------------------
+# Sonarr/Radarr send the media library path (e.g. /tv/Show/Season 1) in most
+# fields — which is useless if that mount isn't in UnrarTool's container.
+# downloadFolder is the actual download directory and is what we want.
+# All parsers try that first, then fall back to other fields, and always
+# verify the resolved path exists on disk before returning it.
+
+def _first_existing(*paths) -> str | None:
+    """Return the first path that exists on disk, or None."""
+    for p in paths:
+        if p and Path(p).exists():
+            return str(p)
+    return None
+
+
 def _parse_sonarr(payload: dict) -> str | None:
-    ep   = payload.get("episodeFile", {})
-    path = ep.get("path")
-    if path:
-        return str(Path(path).parent)
-    return payload.get("series", {}).get("path")
+    ep_path = payload.get("episodeFile", {}).get("path")
+    return _first_existing(
+        payload.get("downloadFolder"),              # download dir — best option
+        str(Path(ep_path).parent) if ep_path else None,  # imported file's folder
+        payload.get("series", {}).get("path"),      # series root — last resort
+    )
 
 
 def _parse_radarr(payload: dict) -> str | None:
-    mf   = payload.get("movieFile", {})
-    path = mf.get("path")
-    if path:
-        return str(Path(path).parent)
-    movie = payload.get("movie", {})
-    return movie.get("folderPath") or movie.get("path")
+    mf_path = payload.get("movieFile", {}).get("path")
+    movie   = payload.get("movie", {})
+    return _first_existing(
+        payload.get("downloadFolder"),
+        str(Path(mf_path).parent) if mf_path else None,
+        movie.get("folderPath"),
+        movie.get("path"),
+    )
 
 
 def _parse_lidarr(payload: dict) -> str | None:
-    tracks = payload.get("trackFiles", [])
-    if tracks and tracks[0].get("path"):
-        return str(Path(tracks[0]["path"]).parent)
-    return payload.get("artist", {}).get("path")
+    tracks  = payload.get("trackFiles", [])
+    tr_path = tracks[0].get("path") if tracks else None
+    return _first_existing(
+        payload.get("downloadFolder"),
+        str(Path(tr_path).parent) if tr_path else None,
+        payload.get("artist", {}).get("path"),
+    )
 
 
 def _parse_readarr(payload: dict) -> str | None:
-    books = payload.get("bookFiles", [])
-    if books and books[0].get("path"):
-        return str(Path(books[0]["path"]).parent)
-    return payload.get("author", {}).get("path")
+    books   = payload.get("bookFiles", [])
+    bk_path = books[0].get("path") if books else None
+    return _first_existing(
+        payload.get("downloadFolder"),
+        str(Path(bk_path).parent) if bk_path else None,
+        payload.get("author", {}).get("path"),
+    )
 
 
 PARSERS = {
@@ -214,8 +240,13 @@ async def _handle_webhook(source: str, payload: dict, api_key: str | None, ip: s
             return {"status": "error", "message": "Could not determine folder path from payload"}
 
         if not Path(folder_path).exists():
-            _log(f"Webhook from {source}: path not found on disk: {folder_path}", "WARNING")
-            return {"status": "error", "message": "Path not found on disk"}
+            _log(
+                f"Webhook from {source}: path '{folder_path}' not found inside the UnrarTool container. "
+                f"This usually means the path reported by {source} is not mounted into UnrarTool. "
+                f"Make sure the same downloads folder is mounted in both containers at the same path.",
+                "WARNING",
+            )
+            return {"status": "error", "message": f"Path not found on disk: {folder_path}"}
 
         _update_hit(db, src)
     finally:

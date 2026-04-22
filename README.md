@@ -106,6 +106,15 @@ Found under **Settings** in the sidebar:
 
 ## Changelog
 
+### v1.4.1
+- **Fix: duplicate extraction jobs from watcher + scheduler** — the scheduler was only skipping RARs with a `completed` job. If the watcher fired early (file still downloading) and created a `failed` job, the scheduler would come along and create a second job for the same RAR. Scheduler now skips RARs with any `completed`, `pending`, or `running` job — only retrying genuinely failed ones.
+- **Fix: expanded defer detection** — `check_parts_complete` returning "Incomplete archive" (e.g. when a multi-part RAR is partially downloaded) now correctly triggers the auto-defer retry loop instead of marking the job as permanently failed. Added `"is not rar archive"`, `"bad archive"`, `"unexpected end of archive"`, and `"the file header is corrupt"` to the defer phrase list.
+- **Improved: webhook path-not-found log** — when Sonarr/Radarr reports a path that doesn't exist inside the UnrarTool container, the log message now clearly explains the cause (the path isn't mounted into UnrarTool) and what to do about it.
+
+### v1.4.1
+- **Fix: duplicate extractions / watcher fires before file is ready** — broadened the "still downloading" defer detection to also catch `corrupt`, `details:` (unrar listing header on a truncated file), and other transient patterns from `check_parts_complete`. Previously the job was hard-failing when the watcher fired mid-download because the error didn't match the narrow phrase list. Job now defers and retries automatically.
+- **Fix: webhook path resolution** — all four *arr parsers now try `downloadFolder` from the payload first (the actual download directory) before falling back to the media library path. This fixes the "path not found on disk" warnings seen when Sonarr/Radarr send their media library path (`/tv/...`) which isn't mounted in UnrarTool. All path candidates are verified to exist on disk before being used.
+
 ### v1.4.0
 - **Clean Up feature** — new "Clean Up" button in the Dashboard, Queue, and History topbars opens a full-screen modal listing every file UnrarTool has extracted across all completed jobs. Files are grouped by folder, all checked by default, with individual checkboxes to deselect anything you want to keep. Shows file sizes and a running total of what will be freed. Live progress bar during deletion. Only files UnrarTool itself extracted are ever listed — RARs and unrelated files are never touched.
 - **Extracted file tracking** — every completed extraction now records exactly which files were written (folder snapshot diff before/after) in the database. This is the safe foundation for the clean-up feature.

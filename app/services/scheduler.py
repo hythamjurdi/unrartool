@@ -46,15 +46,19 @@ async def _scan_all():
     for path, post_action, password in folder_data:
         rar_sets = await asyncio.to_thread(find_rar_sets, path)
         for rar in rar_sets:
-            # Skip if already completed
+            # Skip if already completed OR if there is an active/pending job
+            # (watcher may have already queued it, possibly deferred while download finishes)
             db2 = new_session()
             try:
-                done = (
+                existing = (
                     db2.query(Job)
-                    .filter(Job.rar_file == rar, Job.status == "completed")
+                    .filter(
+                        Job.rar_file == rar,
+                        Job.status.in_(["completed", "pending", "running"]),
+                    )
                     .first()
                 )
-                if done:
+                if existing:
                     continue
             finally:
                 db2.close()
