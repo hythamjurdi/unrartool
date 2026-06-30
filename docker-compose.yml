@@ -1,34 +1,30 @@
 services:
-  rarunpacker:
-    build: .
-    container_name: rarunpacker
+  unrartool:
+    image: hythamjurdi/unrartool:latest
+    container_name: unrartool
     restart: unless-stopped
 
     ports:
-      - "8080:8080"       # Web UI — change left side to remap host port
+      - "8080:8080"       # Change the left number to use a different host port
 
     volumes:
-      # ── Mount your media/downloads here ──────────────────────────────────
-      # Add as many volume mounts as you need. The file browser lets you
-      # navigate anything mounted into the container.
+      # ── Add your own paths here ───────────────────────────────────────────
+      # Mount any folder you want to browse/extract from. You can add as many
+      # as you need. The file browser shows everything under DATA_PATH.
+      # Example:
+      #   - /mnt/user/downloads:/data/downloads
+      #   - /mnt/user/data:/data/data
       - /mnt/user/downloads:/data/downloads
-      - /mnt/user/media:/data/media
 
-      # ── Persistent config + SQLite DB ────────────────────────────────────
-      - /mnt/user/appdata/rarunpacker:/config
+      # ── Persistent config + database ─────────────────────────────────────
+      - /mnt/user/appdata/unrartool:/config
 
     environment:
-      # Root path shown in the file browser on first load
-      DATA_PATH: /data
-
-      # Where the SQLite database and settings are stored
-      CONFIG_PATH: /config
-
-      # Web UI port (must match the container-side port above)
+      DATA_PATH: /data      # Root path shown in the file browser
+      CONFIG_PATH: /config  # Where the database and settings are stored
       PORT: "8080"
 
-    # Unraid: set these to match your PUID/PGID if you need correct
-    # file ownership on extracted files
+    # Uncomment to set file ownership (Unraid default: 99:100)
     # user: "99:100"
 
     logging:
