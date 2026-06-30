@@ -34,7 +34,8 @@
   <Date>2025-01-01</Date>
   <Changes>
 ### 1.4.3
-- Fix: removed dead PORT environment variable that duplicated the port mapping field and added confusion
+- Fix: removed dead PORT environment variable that duplicated the port mapping field
+- Fix: removed editable DATA_PATH/CONFIG_PATH variables — always required to be /data and /config, now fixed internally with nothing to configure
 - Note: if you see Python-internal variables (LANG, GPG_KEY, PYTHON_VERSION) in your template, remove and re-add the container using the Template URL above — those came from a raw image inspection, not this template
 
 ### 1.4.2
@@ -90,29 +91,6 @@
     Display="always"
     Required="true"
     Mask="false">/mnt/user/downloads</Config>
-
-  <!-- ── Environment variables ─────────────────────────────────────────── -->
-  <Config
-    Name="Data Path"
-    Target="DATA_PATH"
-    Default="/data"
-    Mode=""
-    Description="Root path shown in the file browser. Should match the container-side mount point of your Downloads volume above."
-    Type="Variable"
-    Display="always"
-    Required="true"
-    Mask="false">/data</Config>
-
-  <Config
-    Name="Config Path"
-    Target="CONFIG_PATH"
-    Default="/config"
-    Mode=""
-    Description="Where the database and settings are stored. Must match the Config volume above."
-    Type="Variable"
-    Display="always"
-    Required="true"
-    Mask="false">/config</Config>
 
   <Config
     Name="PUID"

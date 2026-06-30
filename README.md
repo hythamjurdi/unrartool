@@ -19,9 +19,6 @@ services:
     volumes:
       - /path/to/downloads:/data/downloads
       - /path/to/appdata/unrartool:/config
-    environment:
-      DATA_PATH: /data
-      CONFIG_PATH: /config
 ```
 
 Open `http://<your-server-ip>:8080`.
@@ -38,11 +35,10 @@ Adjust volume paths and click Apply.
 
 ## Environment Variables
 
+UnrarTool requires no environment variables to function — `/data` and `/config` are fixed internally and match the volume mount targets. The only variables worth setting are for file ownership:
+
 | Variable | Default | Description |
 |---|---|---|
-| `DATA_PATH` | `/data` | Root path shown in the file browser |
-| `CONFIG_PATH` | `/config` | Where the database and settings are stored |
-| `PORT` | `8080` | Web UI port |
 | `PUID` | `99` | User ID for file ownership |
 | `PGID` | `100` | Group ID for file ownership |
 
@@ -107,7 +103,8 @@ Found under **Settings** in the sidebar:
 ## Changelog
 
 ### v1.4.3
-- **Fix: removed dead `PORT` environment variable** — the container always listened on 8080 internally regardless of this variable (it was never actually wired into the startup command), so it served no purpose other than confusing the Unraid template UI by duplicating the port mapping field. Removed from the Dockerfile, `docker-compose.yml`, and the Unraid XML template entirely. To change the port, only the host-side port mapping needs to change — the container always listens on 8080 internally.
+- **Fix: removed dead `PORT` environment variable** — the container always listened on 8080 internally regardless of this variable (it was never actually wired into the startup command), so it served no purpose other than confusing the Unraid template UI by duplicating the port mapping field.
+- **Fix: removed editable `DATA_PATH`/`CONFIG_PATH` variables** — these were always required to equal `/data` and `/config` (the volume mount targets are hardcoded in the template), so exposing them as separately editable fields was redundant and risked users breaking their setup by mismatching them. They're now fixed defaults baked into the image — nothing for the user to configure, nothing that can be set incorrectly.
 - **Note on stray base-image variables**: if your Unraid install shows extra variables like `LANG`, `GPG_KEY`, `PYTHON_VERSION`, or `PYTHON_SHA256`, these are not from UnrarTool's template — they're internal environment variables from the official Python base image, picked up because the container was added without using the proper Template URL (Unraid falls back to auto-inspecting the raw image when no template is found). Remove the container and re-add it using `https://raw.githubusercontent.com/hythamjurdi/unrartool/main/unraid/unrartool.xml` as the Template URL to get the correct, minimal set of fields.
 
 ### v1.4.2

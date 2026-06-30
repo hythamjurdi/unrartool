@@ -10,7 +10,7 @@ services:
     volumes:
       # ── Add your own paths here ───────────────────────────────────────────
       # Mount any folder you want to browse/extract from. You can add as many
-      # as you need. The file browser shows everything under DATA_PATH.
+      # as you need. The file browser shows everything under /data.
       # Example:
       #   - /mnt/user/downloads:/data/downloads
       #   - /mnt/user/data:/data/data
@@ -18,10 +18,6 @@ services:
 
       # ── Persistent config + database ─────────────────────────────────────
       - /mnt/user/appdata/unrartool:/config
-
-    environment:
-      DATA_PATH: /data      # Root path shown in the file browser
-      CONFIG_PATH: /config  # Where the database and settings are stored
 
     # Uncomment to set file ownership (Unraid default: 99:100)
     # user: "99:100"
