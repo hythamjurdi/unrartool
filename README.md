@@ -102,6 +102,11 @@ Found under **Settings** in the sidebar:
 
 ## Changelog
 
+### v1.4.4
+- **CRITICAL FIX: app crash-loop when a watch folder path no longer exists** — if a saved Watch Folder pointed to a path that disappeared (e.g. a volume mount changed), the app would crash entirely on startup with `FileNotFoundError` from the watchdog library, putting the container in a permanent restart loop with the web UI completely unreachable. Every watch folder path is now verified to exist on disk before being registered, and the watcher's own startup is wrapped so it can never take the whole app down — worst case, filesystem watching is disabled for that session while the scheduler and webhooks continue working normally as a fallback.
+- **New: broken watch folder warning banner** — the Sources page now shows a clear warning listing any watch folder paths that are currently unreachable, so this is visible from the UI instead of requiring a dive into Docker logs
+- **New: `GET /api/folders/watcher-status`** — reports whether the filesystem watcher is running and which paths (if any) failed to register
+
 ### v1.4.3
 - **Fix: removed dead `PORT` environment variable** — the container always listened on 8080 internally regardless of this variable (it was never actually wired into the startup command), so it served no purpose other than confusing the Unraid template UI by duplicating the port mapping field.
 - **Fix: removed editable `DATA_PATH`/`CONFIG_PATH` variables** — these were always required to equal `/data` and `/config` (the volume mount targets are hardcoded in the template), so exposing them as separately editable fields was redundant and risked users breaking their setup by mismatching them. They're now fixed defaults baked into the image — nothing for the user to configure, nothing that can be set incorrectly.

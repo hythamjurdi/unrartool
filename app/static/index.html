@@ -1083,11 +1083,31 @@ function updateBadge() {
 
 async function loadAutomation() {
   // Load both panels in parallel; render source status cards at top
-  const [folders, whs, whEnabled] = await Promise.all([
+  const [folders, whs, whEnabled, watcherStatus] = await Promise.all([
     api('/api/folders'),
     api('/api/webhooks/sources'),
     api('/api/webhooks/enabled'),
+    api('/api/folders/watcher-status'),
   ]);
+
+  // Warn if any watch folder paths are missing/broken on disk
+  const failedPaths = watcherStatus.failed_paths || [];
+  const existingWarning = el('watcher-broken-warning');
+  if (existingWarning) existingWarning.remove();
+  if (failedPaths.length > 0) {
+    const banner = document.createElement('div');
+    banner.id = 'watcher-broken-warning';
+    banner.className = 'alert alert-warn';
+    banner.style.marginBottom = '14px';
+    banner.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div>
+        <strong>${failedPaths.length} watch folder${failedPaths.length>1?'s are':' is'} unreachable</strong> — the path doesn't exist on disk (check your volume mounts didn't change):<br>
+        ${failedPaths.map(p => `<code style="background:var(--surface3);padding:1px 6px;border-radius:3px;font-size:12px;display:inline-block;margin:2px 4px 0 0">${esc(p)}</code>`).join('')}
+        <div style="font-size:12px;margin-top:6px;color:var(--text2)">The scheduler and webhooks still work normally as a fallback. Fix the volume mount or remove the broken watch folder below.</div>
+      </div>`;
+    const grid = el('auto-source-grid');
+    if (grid) grid.parentElement.insertBefore(banner, grid);
+  }
 
   // Source status cards at top of page
   const grid = el('auto-source-grid');
@@ -1095,10 +1115,16 @@ async function loadAutomation() {
     const activeFolders = folders.filter(f => f.enabled && !f.marked_extracted);
     const cards = [];
 
-    cards.push(autoSrcCard({dot:'#38bdf8', label:'Filesystem Watcher',
-      status: activeFolders.length > 0 ? `${activeFolders.length} folder${activeFolders.length>1?'s':''} active` : 'No folders',
-      ok: activeFolders.length > 0,
-      meta: activeFolders.length > 0 ? 'Monitors folders for new RARs in real time' : 'Add a watch folder below'}));
+    const watcherOk = watcherStatus.watcher_running && failedPaths.length === 0 && activeFolders.length > 0;
+    cards.push(autoSrcCard({dot: watcherStatus.watcher_running ? (failedPaths.length ? '#f59e0b' : '#38bdf8') : '#ef4444',
+      label:'Filesystem Watcher',
+      status: !watcherStatus.watcher_running ? 'Not running'
+        : failedPaths.length > 0 ? `${failedPaths.length} path${failedPaths.length>1?'s':''} broken`
+        : activeFolders.length > 0 ? `${activeFolders.length} folder${activeFolders.length>1?'s':''} active` : 'No folders',
+      ok: watcherOk,
+      meta: !watcherStatus.watcher_running ? 'Failed to start — see Logs'
+        : failedPaths.length > 0 ? 'Some paths unreachable — see warning above'
+        : activeFolders.length > 0 ? 'Monitors folders for new RARs in real time' : 'Add a watch folder below'}));
 
     cards.push(autoSrcCard({dot:'#9898c0', label:'Scheduler',
       status: activeFolders.length > 0 ? 'Running' : 'Idle',
@@ -1126,6 +1152,11 @@ async function loadAutomation() {
         meta:'Toggle on below to connect *arr apps'}));
     }
     grid.innerHTML = cards.join('');
+    // Re-insert the warning banner since grid.innerHTML wipe removed sibling ordering context
+    if (failedPaths.length > 0) {
+      const w = el('watcher-broken-warning');
+      if (w) grid.parentElement.insertBefore(w, grid);
+    }
   }
 
   // Render watch folders into existing panel

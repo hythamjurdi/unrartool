@@ -124,3 +124,16 @@ def mark_extracted(folder_id: int, extracted: bool = True, db: Session = Depends
 async def scan_all():
     await scan_scheduler.run_now()
     return {"ok": True}
+
+
+@router.get("/watcher-status")
+def watcher_status():
+    """
+    Returns watch folder paths that currently can't be monitored (missing
+    from disk, permission issues, etc.) so the UI can surface a warning
+    instead of silently doing nothing.
+    """
+    return {
+        "watcher_running": folder_watcher._observer is not None,
+        "failed_paths": folder_watcher.get_failed_paths(),
+    }

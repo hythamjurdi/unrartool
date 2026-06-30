@@ -3,6 +3,13 @@ watcher.py – watchdog-based filesystem monitor.
 When a .rar file appears in a watched folder, waits for the file to stabilise
 (size unchanged across two checks STABILISE_SECS apart) then enqueues the RAR set.
 The double-check catches cases where the downloader pauses briefly mid-write.
+
+IMPORTANT: watchdog's observer.schedule() only registers a path — the actual
+inotify watch isn't created until observer.start() runs, which then crashes
+the ENTIRE process with an uncaught FileNotFoundError if any registered path
+no longer exists on disk (e.g. after a volume mount changed). Every path is
+therefore verified to exist before being scheduled, and observer.start() is
+wrapped in a try/except so a single bad path can never take the app down.
 """
 
 import asyncio
@@ -15,7 +22,7 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
 
 from ..database import new_session
-from ..models import WatchedFolder
+from ..models import WatchedFolder, LogEntry
 from .extractor import is_first_rar_part
 from .queue_manager import queue_manager
 
@@ -23,6 +30,17 @@ from .queue_manager import queue_manager
 STABILISE_INITIAL_SECS = 30
 # Then wait this long and check size again — if unchanged, the file is done
 STABILISE_CONFIRM_SECS = 15
+
+
+def _log(message: str, level: str = "INFO") -> None:
+    """Write to both stdout and the DB log table so it's visible in the UI."""
+    db = new_session()
+    try:
+        db.add(LogEntry(level=level, message=message))
+        db.commit()
+    finally:
+        db.close()
+    print(f"[{level}] {message}")
 
 
 class _Handler(FileSystemEventHandler):
@@ -134,11 +152,13 @@ class FolderWatcher:
     def __init__(self):
         self._observer: Optional[Observer] = None
         self._handler: Optional[_Handler] = None
+        self._failed_paths: set[str] = set()   # paths that couldn't be watched, surfaced in UI
 
     async def start(self):
         loop = asyncio.get_event_loop()
         self._handler = _Handler(loop)
         self._observer = Observer()
+        self._failed_paths.clear()
 
         db = new_session()
         try:
@@ -148,18 +168,44 @@ class FolderWatcher:
         finally:
             db.close()
 
-        self._observer.start()
+        # Defense in depth: even with every path pre-validated, watchdog can
+        # still fail here (permissions, inotify limit reached, etc.) — never
+        # let that take the whole app down. Worst case: watching is disabled
+        # and the scheduler/webhooks still work as a fallback.
+        try:
+            self._observer.start()
+        except Exception as e:
+            _log(f"Filesystem watcher failed to start — automation will rely on the scheduler instead. Error: {e}", "ERROR")
+            self._observer = None
 
     async def stop(self):
         if self._observer:
-            self._observer.stop()
-            self._observer.join()
+            try:
+                self._observer.stop()
+                self._observer.join(timeout=5)
+            except Exception:
+                pass
 
     def _watch(self, path: str):
+        """
+        Schedule a path for watching, but only if it actually exists on disk.
+        watchdog defers the real inotify watch creation until observer.start(),
+        so an invalid path here would otherwise crash app startup entirely.
+        """
+        if not os.path.isdir(path):
+            self._failed_paths.add(path)
+            _log(
+                f"Watch folder no longer exists on disk, skipping: {path} "
+                f"(check your volume mounts — this folder won't be monitored until the path is valid again)",
+                "WARNING",
+            )
+            return
         try:
             self._observer.schedule(self._handler, path, recursive=True)
+            self._failed_paths.discard(path)
         except Exception as e:
-            print(f"[WARNING] Cannot watch {path}: {e}")
+            self._failed_paths.add(path)
+            _log(f"Cannot watch {path}: {e}", "WARNING")
 
     def add_path(self, path: str):
         if self._observer:
@@ -177,6 +223,10 @@ class FolderWatcher:
                         self._watch(wf.path)
             finally:
                 db.close()
+
+    def get_failed_paths(self) -> list[str]:
+        """Returns watch folder paths that currently can't be monitored (missing/inaccessible)."""
+        return sorted(self._failed_paths)
 
 
 folder_watcher = FolderWatcher()
