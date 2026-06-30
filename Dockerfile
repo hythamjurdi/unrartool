@@ -41,8 +41,7 @@ COPY app/ ./app/
 
 # Default paths (override via environment in docker-compose / Unraid template)
 ENV DATA_PATH=/data \
-    CONFIG_PATH=/config \
-    PORT=8080
+    CONFIG_PATH=/config
 
 EXPOSE 8080
 

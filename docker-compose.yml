@@ -22,7 +22,6 @@ services:
     environment:
       DATA_PATH: /data      # Root path shown in the file browser
       CONFIG_PATH: /config  # Where the database and settings are stored
-      PORT: "8080"
 
     # Uncomment to set file ownership (Unraid default: 99:100)
     # user: "99:100"

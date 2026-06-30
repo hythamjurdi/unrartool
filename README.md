@@ -106,11 +106,12 @@ Found under **Settings** in the sidebar:
 
 ## Changelog
 
-### v1.4.2
-- **Fix: phantom "media" share on Unraid** — removed the hardcoded `/data/media` volume from the Unraid template and docker-compose. Unraid was auto-creating an empty "media" share on every restart for servers that don't have `/mnt/user/media`. To add extra paths, use Add another Path in Unraid Docker settings and mount under `/data/anything`.
+### v1.4.3
+- **Fix: removed dead `PORT` environment variable** — the container always listened on 8080 internally regardless of this variable (it was never actually wired into the startup command), so it served no purpose other than confusing the Unraid template UI by duplicating the port mapping field. Removed from the Dockerfile, `docker-compose.yml`, and the Unraid XML template entirely. To change the port, only the host-side port mapping needs to change — the container always listens on 8080 internally.
+- **Note on stray base-image variables**: if your Unraid install shows extra variables like `LANG`, `GPG_KEY`, `PYTHON_VERSION`, or `PYTHON_SHA256`, these are not from UnrarTool's template — they're internal environment variables from the official Python base image, picked up because the container was added without using the proper Template URL (Unraid falls back to auto-inspecting the raw image when no template is found). Remove the container and re-add it using `https://raw.githubusercontent.com/hythamjurdi/unrartool/main/unraid/unrartool.xml` as the Template URL to get the correct, minimal set of fields.
 
 ### v1.4.2
-- **Fix: phantom "media" share on Unraid** — removed the optional `/data/media` volume from the Unraid template that was causing Unraid to auto-create an empty cache-only "media" share on servers that don't have that path. Users add their own volume mounts for whatever folders they need — UnrarTool only requires the one Downloads path and the /config path.
+- **Fix: phantom "media" share on Unraid** — removed the hardcoded `/data/media` volume from the Unraid template and docker-compose. Unraid was auto-creating an empty "media" share on every restart for servers that don't have `/mnt/user/media`. To add extra paths, use Add another Path in Unraid Docker settings and mount under `/data/anything`.
 
 ### v1.4.1
 - **Fix: duplicate extraction jobs** — scheduler now skips RARs with any active or completed job, not just completed ones
